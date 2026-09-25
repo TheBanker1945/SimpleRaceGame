@@ -41,6 +41,7 @@ export function computeTireForce(
   fz: number,
   slipRatio: number,
   slipTan: number,
+  peakSlipAngle: number,
   gripScale: number,
   out: TireOutput,
 ): TireOutput {
@@ -55,7 +56,7 @@ export function computeTireForce(
   const shape = cfg.tireShape;
   const b = Math.tan(Math.PI / (2 * shape));
   const sx = slipRatio / cfg.tirePeakSlipRatio;
-  const sy = slipTan / Math.tan(cfg.tirePeakSlipAngle);
+  const sy = slipTan / Math.tan(peakSlipAngle);
   const rho = Math.sqrt(sx * sx + sy * sy);
   const capacity = loadSensitiveMu(cfg, fz) * gripScale * fz;
   // f(ρ)/ρ, with its analytic limit (B·C) near zero slip.

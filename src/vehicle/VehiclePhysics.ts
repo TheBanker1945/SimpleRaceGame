@@ -116,8 +116,10 @@ export class VehiclePhysics {
   // Driver aids
   absEnabled = true;
   tcsEnabled = true;
+  escEnabled = true;
   absActive = false;
   tcsActive = false;
+  escActive = false;
 
   // Telemetry for audio/HUD
   /** Throttle actually reaching the engine (after limiter/TCS/shift cut), 0..1. */
@@ -250,6 +252,7 @@ export class VehiclePhysics {
     this.appliedHandbrake = clamp01(input.handbrake);
     this.absActive = false;
     this.tcsActive = false;
+    this.escActive = false;
 
     const h = dt / this.substeps;
     for (let i = 0; i < this.substeps; i++) {
@@ -372,6 +375,12 @@ export class VehiclePhysics {
       this.engineOmega = clamp(this.engineOmega, idleOmega * 0.9, (cfg.limiterRPM + 150) * RPM_TO_RADS);
     }
 
+    const escMoment = handbrake < 0.1 ? this.stabilityMoment() : 0;
+    if (escMoment !== 0) {
+      // ESC also backs off the engine while it is working.
+      driveTorque *= clamp(1 - Math.abs(escMoment) / cfg.escMaxYawMoment, 0.3, 1);
+    }
+
     const rear = this.axleTerms(RL, RR);
     const Arear = inertiaRear / dt + R * R * rear.stiffness;
     const baseNoDrive = (inertiaRear * this.omegaRear) / dt + R * rear.stiffnessVel;
@@ -384,7 +393,7 @@ export class VehiclePhysics {
       const limit = Arear * omegaTarget - baseNoDrive;
       // Stability part: when the rear tires are near their lateral limit, torque is trimmed
       // so power cannot use up the grip that keeps the tail in line.
-      const rearLateral = Math.max(Math.abs(this.slipTan[RL]), Math.abs(this.slipTan[RR])) / Math.tan(cfg.tirePeakSlipAngle);
+      const rearLateral = Math.max(Math.abs(this.slipTan[RL]), Math.abs(this.slipTan[RR])) / Math.tan(cfg.tirePeakSlipAngleRear);
       if (rearLateral > 0.8) {
         driveTorque *= clamp(1 - (rearLateral - 0.8) * 2.5, 0.1, 1);
         this.tcsActive = true;
@@ -438,6 +447,13 @@ export class VehiclePhysics {
       w.spin += (w.front ? this.omegaFront : this.omegaRear) * dt;
     }
     this.maxSlip = maxSlip;
+
+    if (escMoment !== 0) {
+      // The moment comes from braking one side of the car, which also slows it down.
+      mz += escMoment;
+      const brakeForce = Math.abs(escMoment) / (0.5 * (cfg.trackFront + cfg.trackRear) * 0.5);
+      fx -= Math.sign(this.u) * brakeForce * 0.5;
+    }
 
     const speed = Math.hypot(this.u, this.v);
     const dragK = 0.5 * cfg.airDensity * cfg.dragArea * speed;
@@ -497,6 +513,27 @@ export class VehiclePhysics {
     }
   }
 
+  /**
+   * ESC: compares the actual yaw rate with what the driver's steering asks for (a linear
+   * single-track model capped by the available grip) and returns a correcting yaw moment
+   * when the car over-rotates. Understeer is left alone: the driver should feel it.
+   */
+  private stabilityMoment(): number {
+    const cfg = this.cfg;
+    if (!this.escEnabled || this.u < 8) return 0;
+    const u = this.u;
+    const vch = cfg.escCharacteristicSpeed;
+    const rGrip = (cfg.tireMu * GRAVITY * 0.95) / u;
+    const rRef = clamp((u * this.steerAngle) / (cfg.wheelbase * (1 + (u * u) / (vch * vch))), -rGrip, rGrip);
+    const r = this.r;
+    const overRotating = Math.abs(r) > Math.abs(rRef) + 0.02 || (Math.sign(r) !== Math.sign(rRef) && Math.abs(r) > 0.02);
+    if (!overRotating) return 0;
+    const error = r - rRef;
+    const moment = clamp(-error * cfg.escYawGain * cfg.yawInertia, -cfg.escMaxYawMoment, cfg.escMaxYawMoment);
+    if (Math.abs(moment) > 200) this.escActive = true;
+    return moment;
+  }
+
   /** Aggregates implicit-solver terms for one axle. */
   private axleTerms(i0: number, i1: number): { stiffness: number; stiffnessVel: number; meanVx: number } {
     const t0 = this.tireOut[i0];
@@ -532,7 +569,15 @@ export class VehiclePhysics {
       const omega = w.front ? this.omegaFront : this.omegaRear;
       const kappa = (omega * R - this.vxw[i]) / this.longDen[i];
       w.slipRatio = kappa;
-      computeTireForce(cfg, w.fz, kappa, this.slipTan[i], w.front ? cfg.frontGrip : cfg.rearGrip, this.tireOut[i]);
+      computeTireForce(
+        cfg,
+        w.fz,
+        kappa,
+        this.slipTan[i],
+        w.front ? cfg.tirePeakSlipAngleFront : cfg.tirePeakSlipAngleRear,
+        w.front ? cfg.frontGrip : cfg.rearGrip,
+        this.tireOut[i],
+      );
     }
   }
 }

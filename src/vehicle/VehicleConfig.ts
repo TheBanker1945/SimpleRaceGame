@@ -42,8 +42,13 @@ export interface VehicleConfig {
    * sliding grip = sin(C·π/2) of peak. 1.41 → ~80 % of peak when fully sliding.
    */
   tireShape: number;
-  /** Slip angle (rad) where lateral grip peaks. */
-  tirePeakSlipAngle: number;
+  /**
+   * Slip angle (rad) where lateral grip peaks, per axle. A larger front than rear value
+   * gives a softer front / stiffer rear, i.e. linear-range understeer (≈1°/g by default),
+   * which is what keeps the car calm at 250+ km/h.
+   */
+  tirePeakSlipAngleFront: number;
+  tirePeakSlipAngleRear: number;
   /** Slip ratio where longitudinal grip peaks. */
   tirePeakSlipRatio: number;
   /** Grip loss per unit of load above nominal (tire load sensitivity). Drives understeer from weight transfer. */
@@ -99,6 +104,16 @@ export interface VehicleConfig {
   absSlipTarget: number;
   /** Traction control target slip ratio (fraction of the tire's peak slip ratio). */
   tcsSlipTarget: number;
+  /**
+   * Stability control (ESC). When the car rotates faster than the driver's steering asks
+   * for (oversteer), ESC brakes individual wheels to create a correcting yaw moment.
+   * Gain is in 1/s (fraction of yaw-rate error removed per second).
+   */
+  escYawGain: number;
+  /** Largest corrective yaw moment ESC can create (Nm), roughly one wheel at its braking limit. */
+  escMaxYawMoment: number;
+  /** Characteristic speed (m/s) of ESC's reference yaw model; lower = expects more understeer. */
+  escCharacteristicSpeed: number;
 
   // --------------------------------------------------------------- steering
   /** Maximum road-wheel angle at walking pace. */
@@ -155,7 +170,8 @@ export const DEFAULT_VEHICLE: VehicleConfig = {
   wheelInertia: 1.3,
   tireMu: 1.1,
   tireShape: 1.41,
-  tirePeakSlipAngle: 0.12,
+  tirePeakSlipAngleFront: 0.14,
+  tirePeakSlipAngleRear: 0.095,
   tirePeakSlipRatio: 0.11,
   tireLoadSensitivity: 0.12,
   tireNominalLoad: 3600,
@@ -198,11 +214,14 @@ export const DEFAULT_VEHICLE: VehicleConfig = {
   handbrakeTorque: 4200,
   absSlipTarget: 0.9,
   tcsSlipTarget: 1.1,
+  escYawGain: 6,
+  escMaxYawMoment: 6000,
+  escCharacteristicSpeed: 36,
 
   maxSteerAngle: 0.6,
   steerLateralAccel: 14,
-  steerSlipAllowance: 0.07,
-  steerRate: 2.2,
+  steerSlipAllowance: 0.095,
+  steerRate: 1.0,
 
   pitchStiffness: 170000,
   pitchDamping: 19000,
