@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CarModel } from '../src/render/CarModel.ts';
 import { buildTrafficGeometry, TRAFFIC_TYPES } from '../src/traffic/TrafficTypes.ts';
-import { getCar, isCarId } from '../src/vehicle/CarCatalog.ts';
+import { CARS, getCar, isCarId } from '../src/vehicle/CarCatalog.ts';
 
 const params = new URLSearchParams(location.search);
 const id = params.get('car');
@@ -39,8 +39,21 @@ scene.add(ground);
 
 const t0 = performance.now();
 const trafficKind = params.get('traffic');
-const car = trafficKind ? trafficModel(trafficKind) : new CarModel(def, { paint, withHeadlightLights: false });
+const car = params.has('lineup') ? lineup() : trafficKind ? trafficModel(trafficKind) : new CarModel(def, { paint, withHeadlightLights: false });
 const buildMs = performance.now() - t0;
+
+/** All five cars side by side (for the README). */
+function lineup(): CarModel {
+  const root = new THREE.Group();
+  CARS.forEach((c, i) => {
+    const m = new CarModel(c, { paint: c.defaultPaint, withHeadlightLights: false });
+    m.root.position.set((i - 2) * 2.7, 0, (i - 2) * -0.6);
+    m.root.rotation.y = 0.78;
+    root.add(m.root);
+  });
+  const stub = { root, paintMaterial: new THREE.MeshPhysicalMaterial(), setHeadlights: () => undefined };
+  return stub as unknown as CarModel;
+}
 
 /** Traffic vehicle with the same materials the instanced renderer uses. */
 function trafficModel(kind: string): CarModel {
@@ -88,6 +101,7 @@ const views: Record<string, [number, number, number, number]> = {
   top: [0.001, 9, 0.001, 32],
   back: [0.001, 0.9, -8, 26],
   low: [3.8, 0.45, 3.2, 40],
+  lineup: [2.5, 2.4, 11.5, 38],
 };
 const single = params.get('view');
 const layout = single ? [single] : ['three', 'rear', 'side', 'front'];

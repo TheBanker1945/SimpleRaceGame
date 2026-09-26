@@ -1,9 +1,12 @@
 # Redline — Endless Highway
 
-A realistic 3D endless-highway driving game that runs in the browser. Weave a
-400 hp (300 kW) rear-wheel-drive sports sedan through traffic at up to 280 km/h on an
-infinite, procedurally generated motorway. There are no downloads or external
-assets: every model, texture and sound is generated in code.
+A realistic 3D endless-highway driving game that runs in the browser. Pick one
+of five sports cars in the garage and weave through traffic at up to 322 km/h on
+an infinite, procedurally generated motorway. It plays with a keyboard, a
+gamepad or a phone's touch screen in landscape. There are no downloads or
+external assets: every model, texture and sound is generated in code.
+
+![The garage: five sports cars](docs/screenshots/cars.jpg)
 
 ![Title screen](docs/screenshots/menu.jpg)
 
@@ -11,16 +14,60 @@ assets: every model, texture and sound is generated in code.
 | --- | --- | --- |
 | ![Day](docs/screenshots/day.jpg) | ![Sunset](docs/screenshots/sunset.jpg) | ![Night](docs/screenshots/night.jpg) |
 
-| Handbrake slide: tire smoke and skid marks | Game over |
+| Garage | Game over |
 | --- | --- |
-| ![Handbrake slide](docs/screenshots/handbrake.jpg) | ![Game over](docs/screenshots/gameover.jpg) |
+| ![Garage](docs/screenshots/garage.jpg) | ![Game over](docs/screenshots/gameover.jpg) |
+
+| Phone in landscape: touch controls | Phone in portrait |
+| --- | --- |
+| ![Touch controls](docs/screenshots/mobile.jpg) | ![Rotate your phone](docs/screenshots/rotate.jpg) |
+
+## The cars
+
+Open the **GARAGE** from the title screen (or press **G**), flip through the
+cars with **◀ ▶** (← → / A D on a keyboard) and pick a paint. Each car
+remembers its own paint. Drag the car to spin it.
+
+| Car | Type | Power | 0–100 km/h | Top speed | Weight | Character |
+| --- | --- | --- | --- | --- | --- | --- |
+| **Kestrel S** | Sports sedan, front engine | 400 hp twin-turbo I6 | 4.7 s | 282 km/h | 1,480 kg | The balanced all-rounder (the original car) |
+| **Tempest GT** | Grand tourer, front-mid V8 | 590 hp | 4.4 s | 318 km/h | 1,640 kg | Heavy, torquey and planted at speed |
+| **Vortex V10** | Mid-engine supercar | 640 hp, 8,700 rpm V10 | 3.6 s | 322 km/h | 1,470 kg | Fastest in the garage, sharpest turn-in |
+| **Falco 6 RS** | Rear-engine coupé | 525 hp, 9,000 rpm flat six | 3.5 s | 306 km/h | 1,440 kg | Huge traction and braking, lively tail |
+| **Sprite R** | Roadster, open top | 300 hp turbo I4 | 4.9 s | 254 km/h | 1,180 kg | Slowest on the straights, most agile |
+
+All five are rear-wheel drive. Each has its own mass, weight distribution,
+torque curve, gearing (6 or 7 speeds), tires, brakes, aero and engine sound
+(four, six, eight and ten cylinders fire at different pitches). The figures
+above are what the simulation actually does: `tests/catalog.test.ts` checks
+them.
+
+## Playing on a phone or tablet
+
+- The game runs in **landscape**. In portrait, a full-screen prompt with a
+  turning phone asks you to rotate the device 90°, and the game stays hidden
+  (a run in progress pauses) until you do.
+- **Touch controls** appear while driving: **◀ ▶** steering at the bottom
+  left (slide your thumb between them), **GAS** and **BRAKE** pedals at the
+  bottom right with **HB** (handbrake) above, **+ / −** shift buttons with
+  the manual gearbox, and camera and pause buttons at the top right. Every
+  control is multi-touch, so you can hold gas, steer and handbrake together.
+- **Tilt steering:** Settings → Steering → *Tilt phone* steers by rolling the
+  phone like a steering wheel. iPhones ask for motion permission the first
+  time.
+- Tapping **DRIVE** goes fullscreen and locks the screen to landscape where
+  the browser allows it (Android Chrome). On an iPhone, *Share → Add to Home
+  Screen* gives a fullscreen, landscape web app.
+- The menus, HUD and gauges switch to a compact layout on short landscape
+  screens and keep clear of notches and rounded corners.
 
 ## How to play
 
 - Press **Enter** (or click **DRIVE**) on the title screen. The run starts
   rolling at 70 km/h in the middle of the motorway.
 - **Score** comes from distance (1 point per 10 m). Above **100 km/h** a
-  speed multiplier applies: ×2 at 200 km/h, ×2.8 at 280 km/h.
+  speed multiplier applies: ×2 at 200 km/h, ×2.8 at 280 km/h, ×3.2 at
+  320 km/h.
 - **Near misses:** overtake a car with less than 1.2 m between your sides to
   score 150 × your combo. Each near miss within 4.5 s grows the combo, up to
   ×10. A **close call** (under 0.5 m) pays 50 % more. Any contact breaks the
@@ -47,6 +94,7 @@ assets: every model, texture and sound is generated in code.
 | Pause | Esc / P | Start |
 | Restart instantly | R | Back / View |
 | Fullscreen | F | — |
+| Garage (title screen) | G, then ← → | — |
 
 Notes:
 
@@ -61,10 +109,11 @@ Notes:
 
 ### Settings
 
-Gearbox (automatic/manual), graphics quality (low/medium/high), time of day
-(day/sunset/night, with working headlights at night), driving aids (ABS, TCS
-and ESC on or off), volume, paint colour and FPS counter. Settings are saved
-automatically.
+Gearbox (automatic/manual), steering on touch screens (buttons/tilt),
+graphics quality (low/medium/high), time of day (day/sunset/night, with
+working headlights at night), driving aids (ABS, TCS and ESC on or off),
+volume and FPS counter. The selected car and each car's paint are chosen in
+the garage. Settings are saved automatically.
 
 ![Settings](docs/screenshots/settings.jpg)
 
@@ -94,7 +143,14 @@ URL options, useful for testing or sharing a look:
 | `?tod=day\|sunset\|night` | Override the time of day |
 | `?view=orbit` | Orbit camera around the car |
 | `?start=8000000` | Start 8,000 km down the road, millions of metres from the world origin (floating-origin demo) |
-| `?debug` | Exposes `window.redline` (state, speed, score, forced crash) for automated browser tests |
+| `?touch` | Forces the touch controls on (for testing on a desktop) |
+| `?debug` | Exposes `window.redline` (state, speed, score, forced crash, car selection) for automated browser tests |
+
+`npm run dev` also serves a car viewer for working on the models:
+`/dev/cars.html?car=vortex` shows one car from four angles (`&view=low`,
+`&view=side`, … for one view, `&night` for lit lamps, `&matte` to judge the
+surfaces without reflections), `?traffic=suv` shows a traffic car and
+`?lineup&view=lineup` shows all five.
 
 ## Deploy to GitHub Pages
 
@@ -120,18 +176,49 @@ One-time setup:
 ```
 src/
   core/      Game (state machine + main loop), FixedStepLoop, Scoring, Settings, math, seeded RNG
-  vehicle/   VehicleConfig (all tuning), Engine, Gearbox, Tire, VehiclePhysics
+  vehicle/   VehicleConfig (tuning of the Kestrel), CarCatalog (the five cars), Engine, Gearbox,
+             Tire, VehiclePhysics
   physics/   Collision (2D oriented boxes + impulses), VehicleBody (car ↔ collision body)
-  input/     Input (keyboard + gamepad, steering and pedal ramps)
+  input/     Input (keyboard, gamepad, touch buttons and tilt; steering and pedal ramps)
   world/     RoadPath (procedural centerline), RoadChunk/ChunkManager (recycled chunks),
              Terrain, SceneryModels, Environment (sky, light, fog), World (floating origin)
   traffic/   TrafficAI (IDM, lane-change rules), TrafficCar, TrafficManager (spawning, pooling,
-             collisions, near misses), TrafficTypes (procedural models), TrafficRenderer (instancing)
+             collisions, near misses), TrafficTypes + TrafficModels (procedural models),
+             TrafficRenderer (instancing)
   render/    Renderer (quality profiles), CarModel (player car), CameraRig, Effects, Textures
+    car/     Procedural car kit: Profile (smooth design curves), Body (lofted body + glasshouse),
+             GridMesh (mesh + creased normals), Decal (surface projection), CabinMask (windows),
+             Wheel, Parts (mirrors, wings, exhausts, …), Designs (the five bodies)
   audio/     AudioEngine (Web Audio synthesis)
-  ui/        Hud (canvas gauges), Menus, styles.css
+  ui/        Hud (canvas gauges), Menus (incl. garage), TouchControls, RotateOverlay, styles.css
+dev/         Car viewer (dev server only)
 tests/       Vitest suites
 ```
+
+### Procedural cars
+
+Every car is generated from a design in `src/render/car/Designs.ts`, placed
+relative to its own physics dimensions so the bodywork always wraps the
+simulated wheels:
+
+- **Lofted body:** smooth side-view lines (hood, deck, underside), plan-view
+  width and fender crowns are sampled through superellipse cross-sections.
+  The front and rear corners are pulled back in plan view, so bumpers wrap
+  around. Wheel arches cut real openings with wells behind them, and normals
+  are split at a crease angle so arch lips and panel edges stay crisp.
+- **Glasshouse:** a second loft for the windscreen, roof and rear window. The
+  windows, pillars and seals are painted into a texture laid out along the
+  shell, so they're always symmetric and follow the glass exactly.
+- **Surface decals:** headlights (housings, projectors, LED running lights),
+  taillights, grilles with a honeycomb mesh, intakes, vents, shut lines,
+  handles and number plates are 2D outlines projected onto the body, so
+  they hug its curves.
+- **Parts:** detailed wheels (lathed tires with tread grooves, six spoke
+  designs with dished faces, brake discs and calipers), aero mirrors, rear
+  wings, splitters, diffuser strakes, exhausts, wipers, and for the roadster
+  a windscreen, roll hoops, seats and dashboard.
+- **Traffic:** hatchbacks, sedans and SUVs use the same generator at a
+  coarser resolution (about 8k triangles each) and are drawn with instancing.
 
 ### Physics: a custom vehicle model instead of Rapier
 
@@ -157,7 +244,7 @@ game uses its own model instead:
   control at any speed. The engine inertia is reflected through the gearbox.
 - **Engine:** an interpolated torque curve, engine braking, clutch slip at
   launch and a hard-cut rev limiter.
-- **Gearbox:** 6 speeds plus reverse, with shift time, automatic logic
+- **Gearbox:** 6 or 7 speeds plus reverse, with shift time, automatic logic
   (throttle-dependent shift points, kickdown, no gear hunting) and manual mode
   with over-rev protection.
 - **Weight transfer:** sprung-mass pitch, roll and heave spring-dampers drive
@@ -200,18 +287,23 @@ game uses its own model instead:
 
 Everything is synthesized with the Web Audio API:
 
-- **Engine:** a harmonic oscillator stack following the six-cylinder firing
-  frequency (rpm/20 Hz), with load-dependent distortion and filtering, intake
-  roar and lift-off pops.
+- **Engine:** a harmonic oscillator stack following each car's firing
+  frequency (rpm/60 × cylinders/2, so the V10 screams and the V8 burbles),
+  with load-dependent distortion and filtering, intake roar and lift-off
+  pops.
 - **Tires and road:** screech, wind, road roar, rumble strips and barrier
   scrapes.
 - **Traffic:** four doppler-shifted, stereo-panned voices, plus horns.
 - **One-shots:** shift, crash and near-miss whoosh sounds.
 
-## Tuning the car
+## Tuning the cars
 
-Every handling value lives in `src/vehicle/VehicleConfig.ts` (`DEFAULT_VEHICLE`).
-The most useful ones:
+The Kestrel's handling values live in `src/vehicle/VehicleConfig.ts`
+(`DEFAULT_VEHICLE`). The other four cars in `src/vehicle/CarCatalog.ts`
+start from it and override what makes them different. If you retune a car,
+update its garage specs too: `npm test` simulates every car and fails if
+the advertised 0–100 km/h time, top speed or peak power no longer match.
+The most useful values:
 
 | Value | Default | Effect |
 | --- | --- | --- |
@@ -257,6 +349,10 @@ such as crash thresholds, start speed and scoring, live at the top of
 - CPU cost is small. Vehicle physics takes about 14 µs per 120 Hz step,
   traffic about 10–20 µs per step, and building a chunk about 1.3 ms (roughly
   once per second at top speed, spread over frames).
+- The player's car is about 75k triangles and takes a few hundred
+  milliseconds to build. The other cars are built in the background while
+  the title screen idles, so the garage switches instantly.
+- On phones the game stops rendering while the rotate prompt is up.
 
-If an older laptop struggles, choose **Low**. It turns off shadows and clouds,
-renders at 0.75× resolution and shortens the draw distance.
+If an older laptop or phone struggles, choose **Low**. It turns off shadows
+and clouds, renders at 0.75× resolution and shortens the draw distance.

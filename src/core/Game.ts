@@ -535,14 +535,14 @@ export class Game {
     if (input.consume('fullscreen')) this.toggleFullscreen();
     switch (this.state) {
       case 'menu': {
+        if (input.consume('garage') && this.menus.activeScreen === 'start') this.menus.open('garage', 'start');
         const screen = this.menus.activeScreen;
-        if (input.consume('pause')) this.menus.back();
         if (screen === 'garage') {
           if (input.consume('left')) this.menus.garageStep(-1);
           if (input.consume('right')) this.menus.garageStep(1);
         }
-        if (input.consume('garage') && screen === 'start') this.menus.open('garage', 'start');
-        if (input.consume('confirm') && (screen === 'start' || screen === 'garage')) this.startRun();
+        if (input.consume('pause')) this.menus.back();
+        else if (input.consume('confirm') && (screen === 'start' || screen === 'garage')) this.startRun();
         break;
       }
       case 'playing':
