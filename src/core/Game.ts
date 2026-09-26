@@ -5,6 +5,7 @@ import { collideWithBarriers, createBody, createContact, type ImpactResult } fro
 import { bodyToVehicle, vehicleToBody } from '../physics/VehicleBody.ts';
 import { CameraRig, type CameraTarget } from '../render/CameraRig.ts';
 import { CarModel } from '../render/CarModel.ts';
+import { Effects } from '../render/Effects.ts';
 import { Renderer } from '../render/Renderer.ts';
 import type { TrafficCar } from '../traffic/TrafficCar.ts';
 import { TrafficManager } from '../traffic/TrafficManager.ts';
@@ -56,6 +57,16 @@ export class Game {
   private readonly hud: Hud;
   private readonly menus: Menus;
   private readonly scoring = new Scoring();
+  private readonly effects = new Effects();
+  private effectsOriginX = 0;
+  private effectsOriginZ = 0;
+  /** Pending spark burst from the last contact (road coordinates). */
+  private sparkS = 0;
+  private sparkD = 0;
+  private sparkCount = 0;
+  private readonly tmpWheel = new THREE.Vector3();
+  private readonly tmpVel = new THREE.Vector3();
+  private readonly tmpSpark = new THREE.Vector3();
 
   state: GameState = 'menu';
   private damage = 0;
@@ -120,6 +131,7 @@ export class Game {
     const trafficRenderer = new TrafficRenderer(24, 260);
     this.renderer.scene.add(trafficRenderer.group);
     this.traffic = new TrafficManager(trafficRenderer);
+    this.renderer.scene.add(this.effects.group);
 
     this.hud = new Hud(container);
     this.menus = new Menus(container, this.settings, {
@@ -244,6 +256,10 @@ export class Game {
     this.prevPsi = this.car.psi;
     this.loop.reset();
     this.world.poseAt(this.car.s, this.car.d, 0, this.pose);
+    this.effects.clear();
+    this.effectsOriginX = this.world.originX;
+    this.effectsOriginZ = this.world.originZ;
+    this.sparkCount = 0;
   }
 
   /** Title screen: the car is parked on the hard shoulder while traffic streams past. */
@@ -308,7 +324,6 @@ export class Game {
       saveBestScore(score);
     }
     this.hud.show(false);
-    this.audio.silenceContinuous();
     const s = this.scoring;
     this.menus.showGameOver({
       score,
@@ -435,6 +450,7 @@ export class Game {
       this.scrapeAge = 0;
       // Grinding along the rail is one long contact: count it as a new impact only every 0.35 s.
       const hit = this.impact.closingSpeed;
+      if (car.speed > 4) this.queueSparks(this.contact.py, -this.contact.px, 2 + Math.min(10, hit * 3));
       if (hit > 1.5 && (this.simTime - this.lastBarrierImpact > 0.35 || hit > HARD_HIT_BARRIER)) {
         this.lastBarrierImpact = this.simTime;
         this.onImpact(hit, HARD_HIT_BARRIER, 'Hit the barrier');
@@ -445,6 +461,7 @@ export class Game {
     for (const e of this.traffic.events) {
       if (e.kind === 'collision') {
         this.scrapeAge = 0;
+        this.queueSparks((car.s + e.car.s) / 2, (car.d + e.car.d) / 2, 6 + Math.min(30, e.closingSpeed * 3));
         this.onImpact(e.closingSpeed, HARD_HIT_TRAFFIC, `Hit a ${describe(e.car)}`);
       } else if (e.kind === 'nearMiss' && driving) {
         this.onNearMiss(e.car, e.gap);
@@ -458,6 +475,12 @@ export class Game {
       this.lastShiftCount = shifts;
       if (driving && car.gearbox.gear > 0) this.audio.playShift(car.gearbox.lastShiftDirection > 0);
     }
+  }
+
+  private queueSparks(s: number, d: number, count: number): void {
+    this.sparkS = s;
+    this.sparkD = d;
+    this.sparkCount = Math.min(40, this.sparkCount + count);
   }
 
   private onImpact(closingSpeed: number, hardThreshold: number, what: string): void {
@@ -519,6 +542,7 @@ export class Game {
     if (this.state === 'menu' || this.orbitOnly) this.cameraRig.updateOrbit(dt, this.pose.position, this.pose.yaw);
     else this.cameraRig.update(this.state === 'paused' ? 0 : dt, this.cameraTarget());
     this.traffic.render(a, this.world, camera, this.world.isNight);
+    this.updateEffects(this.state === 'paused' ? 0 : dt * this.timeScale);
     this.world.environment.update(dt, camera, this.pose.position, this.pose.position.y);
     this.renderer.render(camera);
 
@@ -529,12 +553,52 @@ export class Game {
     if (this.framesRendered === 3) document.getElementById('loading')?.classList.add('hidden');
   }
 
+  /** Tire smoke, skid marks and sparks for the player's car. */
+  private updateEffects(dt: number): void {
+    const fx = this.effects;
+    if (this.world.originX !== this.effectsOriginX || this.world.originZ !== this.effectsOriginZ) {
+      fx.shiftOrigin(this.world.originX - this.effectsOriginX, this.world.originZ - this.effectsOriginZ);
+      this.effectsOriginX = this.world.originX;
+      this.effectsOriginZ = this.world.originZ;
+    }
+    fx.setViewport(this.renderer.renderer.domElement.height, this.cameraRig.camera.fov);
+    if (dt <= 0) return;
+    const car = this.car;
+    const root = this.carModel.root;
+    root.updateMatrixWorld();
+    // World-space velocity of the car for particle inheritance.
+    // Body frame (forward u, left v) → car local (+Z forward, +X left) → world by heading.
+    this.tmpVel.set(car.v, 0, car.u).applyAxisAngle(THREE.Object3D.DEFAULT_UP, this.pose.yaw);
+    const active = this.state !== 'menu';
+    for (let i = 0; i < 4; i++) {
+      const w = car.wheels[i];
+      const sliding = active && car.speed > 2.5 && w.fz > 300 && w.slip > 1.35;
+      if (!sliding) {
+        fx.skidMark(i, null);
+        continue;
+      }
+      // Wheel contact patch: body x (forward) → local +Z, body y (left) → local +X.
+      this.tmpWheel.set(w.y, 0, w.x);
+      root.localToWorld(this.tmpWheel);
+      fx.skidMark(i, this.tmpWheel);
+      const intensity = Math.min(1, (w.slip - 1.2) / 3);
+      if (Math.random() < dt * (10 + intensity * 40)) fx.tireSmoke(this.tmpWheel, this.tmpVel, intensity, this.world.isNight);
+    }
+    if (this.sparkCount > 0) {
+      this.world.toRender(this.sparkS, this.sparkD, this.tmpSpark, 0.45);
+      fx.sparkBurst(this.tmpSpark, this.tmpVel, Math.round(this.sparkCount));
+      this.sparkCount = 0;
+    }
+    fx.update(dt);
+  }
+
   private updateAudio(dt: number): void {
     if (!this.audio.ready || this.state === 'paused') return;
     const car = this.car;
     const st = this.soundState;
     st.rpm = car.rpm;
-    st.load = this.state === 'menu' ? 0 : car.engineLoad;
+    // Parked or wrecked: the engine just idles.
+    st.load = this.state === 'playing' ? car.engineLoad : 0;
     st.throttle = car.appliedThrottle;
     st.limiterCutting = car.limiter.cutting;
     st.speed = car.speed;

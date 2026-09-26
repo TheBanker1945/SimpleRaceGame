@@ -2,7 +2,7 @@
  * Every tuning value for the player car lives here. All units are SI
  * (kg, m, s, N, Nm, rad) unless the name says otherwise (RPM, km/h).
  *
- * The defaults describe a ~380 hp front-engine, rear-wheel-drive sports sedan:
+ * The defaults describe a ~400 hp (300 kW) front-engine, rear-wheel-drive sports sedan:
  *  - 0-100 km/h ≈ 5 s, top speed ≈ 280 km/h (drag limited in 6th)
  *  - 100-0 km/h braking ≈ 36 m
  *  - mild understeer at the limit, lift/handbrake oversteer available

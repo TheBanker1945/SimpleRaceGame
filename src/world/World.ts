@@ -41,12 +41,9 @@ export class World {
   /** Floating origin (absolute world coordinates that map to render-space 0,0). */
   originX = 0;
   originZ = 0;
-  /** Increments whenever the origin moves, so other systems can react. */
-  originVersion = 0;
   private readonly lampMat: THREE.MeshStandardMaterial;
   private readonly poolMat: THREE.MeshBasicMaterial;
   private readonly signTextures: THREE.Texture[];
-  private seed = 1;
   private readonly sample: PathSample = createPathSample();
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, maxAnisotropy: number) {
@@ -81,7 +78,7 @@ export class World {
       poleGeo: createLampPoleGeometry(),
       lampHeadGeo: createLampHeadGeometry(),
       postGeo: createRailPostGeometry(),
-      poolGeo: new THREE.PlaneGeometry(15, 15).rotateX(-Math.PI / 2),
+      poolGeo: new THREE.PlaneGeometry(30, 30).rotateX(-Math.PI / 2),
       signTextures: this.signTextures,
     };
     this.chunks = new ChunkManager(assets, this.path);
@@ -99,7 +96,7 @@ export class World {
     this.environment.apply(tod, quality);
     const night = this.environment.isNight;
     this.lampMat.emissiveIntensity = night ? 3.5 : 0;
-    this.poolMat.opacity = night ? 0.55 : 0;
+    this.poolMat.opacity = night ? 0.62 : 0;
     this.chunks.setNightLights(night);
   }
 
@@ -109,19 +106,13 @@ export class World {
    * @param startX absolute world X/Z of the road start (far values exercise the floating origin)
    */
   reset(seed: number, startS: number, roadStart = 0, startX = 0, startZ = 0): void {
-    this.seed = seed;
     this.path.reset(seed, roadStart, startX, startZ);
     this.chunks.reset(seed);
     this.path.ensure(startS + 400);
     this.path.sample(startS, this.sample);
     this.originX = this.sample.x;
     this.originZ = this.sample.z;
-    this.originVersion++;
     this.chunks.update(startS, this.originX, this.originZ, true);
-  }
-
-  get runSeed(): number {
-    return this.seed;
   }
 
   /** Per-frame world maintenance around the player. */
@@ -132,7 +123,6 @@ export class World {
     if (Math.abs(dx) > ORIGIN_SHIFT_DISTANCE || Math.abs(dz) > ORIGIN_SHIFT_DISTANCE) {
       this.originX = this.sample.x;
       this.originZ = this.sample.z;
-      this.originVersion++;
       this.chunks.applyOrigin(this.originX, this.originZ);
     }
     this.chunks.update(playerS, this.originX, this.originZ);
@@ -156,9 +146,5 @@ export class World {
   toRender(s: number, d: number, out: THREE.Vector3, height = 0): THREE.Vector3 {
     const p = this.path.sample(s, this.sample);
     return out.set(p.x + Math.cos(p.heading) * d - this.originX, p.y + height, p.z - Math.sin(p.heading) * d - this.originZ);
-  }
-
-  roadHeightAt(s: number): number {
-    return this.path.sample(s, this.sample).y;
   }
 }

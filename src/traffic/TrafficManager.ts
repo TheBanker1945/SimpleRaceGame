@@ -5,7 +5,7 @@ import { createBody, createContact, obbContact, resolveContact, type ImpactResul
 import { bodyToVehicle, vehicleToBody } from '../physics/VehicleBody.ts';
 import type { SoundSource } from '../audio/AudioEngine.ts';
 import type { VehiclePhysics } from '../vehicle/VehiclePhysics.ts';
-import { LANE_COUNT, laneAt, laneCenter, oppositeLaneCenter } from '../world/RoadConstants.ts';
+import { LANE_COUNT, laneCenter, oppositeLaneCenter } from '../world/RoadConstants.ts';
 import type { World } from '../world/World.ts';
 import { idmAcceleration, shouldChangeLane, type IdmParams, type LaneChangeParams } from './TrafficAI.ts';
 import { TrafficCar } from './TrafficCar.ts';
@@ -592,10 +592,5 @@ export class TrafficManager {
       src.speed = o.speed;
     }
     return n;
-  }
-
-  /** Lane index of the player (for HUD/AI debugging). */
-  playerLane(): number {
-    return laneAt(this.player.d);
   }
 }

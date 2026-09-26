@@ -84,15 +84,15 @@ const PRESETS: Record<TimeOfDay, Preset> = {
     mieG: 0.7,
     cloudCoverage: 0.2,
     lightColor: 0x8fa6d6,
-    lightIntensity: 0.42,
+    lightIntensity: 0.6,
     lightElevation: 38,
     lightAzimuth: 120,
-    hemiSky: 0x33456a,
-    hemiGround: 0x10131a,
-    hemiIntensity: 0.55,
+    hemiSky: 0x3a4f78,
+    hemiGround: 0x151a22,
+    hemiIntensity: 0.85,
     fogColor: 0x0b1220,
-    exposure: 0.8,
-    envIntensity: 0.6,
+    exposure: 0.9,
+    envIntensity: 0.8,
     mountainColor: 0x0e1522,
     groundColor: 0x0b100c,
     night: true,
@@ -173,7 +173,7 @@ export class Environment {
     u.rayleigh.value = p.rayleigh;
     u.mieCoefficient.value = p.mie;
     u.mieDirectionalG.value = p.mieG;
-    if (u.cloudCoverage) u.cloudCoverage.value = p.cloudCoverage;
+    if (u.cloudCoverage) u.cloudCoverage.value = quality.clouds ? p.cloudCoverage : 0;
     const sunPos = new THREE.Vector3().setFromSphericalCoords(
       1,
       THREE.MathUtils.degToRad(90 - p.elevation),

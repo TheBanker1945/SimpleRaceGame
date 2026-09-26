@@ -24,6 +24,8 @@ export class ChunkManager {
   private density = 1;
   private ahead = 15;
   private nightLights = false;
+  /** Set when settings invalidate every chunk: rebuild them all at once instead of over several frames. */
+  private rebuildAll = false;
 
   private readonly features = new Map<number, ChunkFeature>();
   private scheduledUntil = 0;
@@ -48,6 +50,7 @@ export class ChunkManager {
         this.group.remove(chunk.group);
       }
       this.active.clear();
+      this.rebuildAll = true;
     }
   }
 
@@ -63,12 +66,6 @@ export class ChunkManager {
     this.featureRng = new Random(seed * 7 + 3);
     this.nextOverpass = 12 + this.featureRng.int(0, 8);
     this.nextGantry = 5 + this.featureRng.int(0, 4);
-  }
-
-  get farthestS(): number {
-    let max = 0;
-    for (const idx of this.active.keys()) max = Math.max(max, (idx + 1) * CHUNK_LENGTH);
-    return max;
   }
 
   private featureFor(index: number): ChunkFeature {
@@ -108,7 +105,8 @@ export class ChunkManager {
     }
     for (const idx of this.features.keys()) if (idx < first - 4) this.features.delete(idx);
 
-    let budget = unlimited ? Infinity : BUILDS_PER_FRAME;
+    let budget = unlimited || this.rebuildAll ? Infinity : BUILDS_PER_FRAME;
+    this.rebuildAll = false;
     // Build nearest-first so a burst never leaves a hole right in front of the car.
     for (let idx = current; idx <= last && budget > 0; idx++) budget = this.ensureChunk(idx, originX, originZ, budget);
     for (let idx = current - 1; idx >= first && budget > 0; idx--) budget = this.ensureChunk(idx, originX, originZ, budget);

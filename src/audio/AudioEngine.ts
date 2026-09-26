@@ -134,16 +134,6 @@ export class AudioEngine {
     void this.ctx?.resume();
   }
 
-  /** Fades all continuous layers to silence (menus, game over). */
-  silenceContinuous(): void {
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    for (const g of [this.engineGain, this.intakeGain, this.screechGain, this.windGain, this.roadGain, this.rumbleGain, this.scrapeGain]) {
-      g.gain.setTargetAtTime(0, t, 0.15);
-    }
-    for (const v of this.voices) v.gain.gain.setTargetAtTime(0, t, 0.15);
-  }
-
   // ------------------------------------------------------------------ building
 
   private makeNoise(seconds: number, brown: boolean): AudioBuffer {

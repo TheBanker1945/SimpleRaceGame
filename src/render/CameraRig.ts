@@ -64,11 +64,6 @@ export class CameraRig {
     this.initialized = true;
   }
 
-  /** Shifts cached world-space values when the floating origin moves. */
-  shiftOrigin(dy: number): void {
-    this.height -= dy;
-  }
-
   update(dt: number, target: CameraTarget): void {
     if (!this.initialized) this.reset(target);
     this.time += dt;

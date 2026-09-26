@@ -46,7 +46,6 @@ export class RoadPath implements RoadProfile {
   private count = 0;
 
   private rng = new Random(1);
-  private seed = 1;
   // Generator state (at global sample index first + count - 1).
   private curv = 0;
   private curvTarget = 0;
@@ -66,7 +65,6 @@ export class RoadPath implements RoadProfile {
    * from the world origin (used to verify precision on very long drives).
    */
   reset(seed: number, startS = 0, x0 = 0, z0 = 0): void {
-    this.seed = seed;
     this.rng = new Random(seed);
     this.first = Math.max(0, Math.round(startS / SPACING));
     this.count = 1;
@@ -86,10 +84,6 @@ export class RoadPath implements RoadProfile {
     this.genGradeTarget = 0;
     this.genGradeStep = 0;
     this.genGradeHold = START_STRAIGHT;
-  }
-
-  get runSeed(): number {
-    return this.seed;
   }
 
   /** Distance of the last generated sample. */
@@ -230,10 +224,6 @@ export class RoadPath implements RoadProfile {
 
   verticalCurvature(s: number): number {
     return this.vcurvs[this.index(s)];
-  }
-
-  heightAt(s: number): number {
-    return this.sample(s, scratch).y;
   }
 
   /** A few millimetres of surface undulation so the suspension is never perfectly still. */

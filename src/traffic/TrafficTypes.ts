@@ -134,11 +134,6 @@ export const TRAFFIC_TYPES: TrafficType[] = [
   },
 ];
 
-export const TYPE_BY_KIND: Record<TrafficKind, TrafficType> = Object.fromEntries(TRAFFIC_TYPES.map((t) => [t.kind, t])) as Record<
-  TrafficKind,
-  TrafficType
->;
-
 /** Geometry for one vehicle type, split by how it is shaded. */
 export interface TrafficGeometry {
   /** Painted panels (instance color = paint). */

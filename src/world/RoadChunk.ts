@@ -402,8 +402,9 @@ export class RoadChunk {
       const s = this.s0 + POLE_SPACING * (p + 0.5);
       this.setInstance(this.poles, p, s, MEDIAN_CENTER, 0.85, 0, 1, path);
       this.setInstance(this.heads, p, s, MEDIAN_CENTER, 0.85, 0, 1, path);
-      this.setInstance(this.pools, p * 2, s, MEDIAN_CENTER - 3.2, 0.03, 0, 1, path);
-      this.setInstance(this.pools, p * 2 + 1, s, MEDIAN_CENTER + 3.2, 0.03, 0, 1, path);
+      // Light pools centred over the middle of each carriageway.
+      this.setInstance(this.pools, p * 2, s, MEDIAN_CENTER - 6.8, 0.03, 0, 1, path);
+      this.setInstance(this.pools, p * 2 + 1, s, MEDIAN_CENTER + 6.8, 0.03, 0, 1, path);
     }
     this.finishInstances(this.poles, POLES);
     this.finishInstances(this.heads, POLES);

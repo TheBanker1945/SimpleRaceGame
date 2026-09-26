@@ -16,6 +16,8 @@ export interface QualityProfile {
   sceneryDensity: number;
   /** Adds real spot lights on the player's headlights at night. */
   headlightSpots: boolean;
+  /** Procedural clouds in the sky shader (per-pixel noise, costly on weak GPUs). */
+  clouds: boolean;
 }
 
 export const QUALITY_PROFILES: Record<Quality, QualityProfile> = {
@@ -28,6 +30,7 @@ export const QUALITY_PROFILES: Record<Quality, QualityProfile> = {
     drawDistance: 900,
     sceneryDensity: 0.45,
     headlightSpots: false,
+    clouds: false,
   },
   medium: {
     pixelScale: 1,
@@ -38,6 +41,7 @@ export const QUALITY_PROFILES: Record<Quality, QualityProfile> = {
     drawDistance: 1400,
     sceneryDensity: 0.75,
     headlightSpots: true,
+    clouds: true,
   },
   high: {
     pixelScale: 1,
@@ -48,6 +52,7 @@ export const QUALITY_PROFILES: Record<Quality, QualityProfile> = {
     drawDistance: 2000,
     sceneryDensity: 1,
     headlightSpots: true,
+    clouds: true,
   },
 };
 
@@ -69,7 +74,7 @@ export class Renderer {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.domElement.id = 'game-canvas';
     container.appendChild(this.renderer.domElement);
     this.applyQuality(quality);

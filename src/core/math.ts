@@ -5,9 +5,6 @@ export const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
-export const inverseLerp = (a: number, b: number, v: number): number =>
-  a === b ? 0 : clamp01((v - a) / (b - a));
-
 /** Moves `current` toward `target` by at most `maxDelta`. */
 export const approach = (current: number, target: number, maxDelta: number): number => {
   if (current < target) return Math.min(current + maxDelta, target);

@@ -63,7 +63,6 @@ export class Input {
   readonly state: DriverInput = { throttle: 0, brake: 0, steer: 0, handbrake: 0 };
   /** True when the most recent analog input came from a gamepad. */
   usingGamepad = false;
-  gamepadConnected = false;
 
   private readonly keys = new Set<string>();
   private readonly pending = new Set<InputAction>();
@@ -89,8 +88,6 @@ export class Input {
     });
     // Releasing everything on focus loss avoids a stuck throttle after alt-tab.
     target.addEventListener('blur', () => this.keys.clear());
-    target.addEventListener('gamepadconnected', () => (this.gamepadConnected = true));
-    target.addEventListener('gamepaddisconnected', () => (this.gamepadConnected = this.findGamepad() !== null));
   }
 
   /** Returns true once per press of the action (edge-triggered). */
@@ -101,10 +98,6 @@ export class Input {
   /** Drops queued presses, e.g. when switching screens. */
   clearPresses(): void {
     this.pending.clear();
-  }
-
-  isDown(code: string): boolean {
-    return this.keys.has(code);
   }
 
   /**
@@ -142,7 +135,6 @@ export class Input {
     let handbrake = kbHandbrake ? 1 : 0;
 
     const pad = this.findGamepad();
-    this.gamepadConnected = pad !== null;
     if (pad) {
       const deadzone = 0.1;
       const raw = pad.axes.length > 0 ? pad.axes[0] : 0;
