@@ -3,6 +3,7 @@ import { clamp, lerp, smoothstep } from '../core/math.ts';
 import { Random } from '../core/Random.ts';
 import { createBody, createContact, obbContact, resolveContact, type ImpactResult } from '../physics/Collision.ts';
 import { bodyToVehicle, vehicleToBody } from '../physics/VehicleBody.ts';
+import type { SoundSource } from '../audio/AudioEngine.ts';
 import type { VehiclePhysics } from '../vehicle/VehiclePhysics.ts';
 import { LANE_COUNT, laneAt, laneCenter, oppositeLaneCenter } from '../world/RoadConstants.ts';
 import type { World } from '../world/World.ts';
@@ -17,6 +18,7 @@ export type TrafficEvent =
   | { kind: 'trafficCrash'; car: TrafficCar; closingSpeed: number };
 
 interface OncomingCar {
+  id: number;
   type: TrafficType;
   s: number;
   prevS: number;
@@ -92,6 +94,7 @@ export class TrafficManager {
   private spawnDistance = 700;
   private spawnTimer = 0;
   private oncomingTimer = 0;
+  private oncomingSerial = 0;
   /** Seconds since the run started; drives difficulty. */
   runTime = 0;
   private simTime = 0;
@@ -191,7 +194,7 @@ export class TrafficManager {
   }
 
   private spawnOncoming(s: number): void {
-    const o = this.oncomingPool.pop() ?? { type: TRAFFIC_TYPES[0], s: 0, prevS: 0, lane: 0, speed: 0, paint: new THREE.Color() };
+    const o = this.oncomingPool.pop() ?? { id: 0, type: TRAFFIC_TYPES[0], s: 0, prevS: 0, lane: 0, speed: 0, paint: new THREE.Color() };
     const type = this.pickType();
     const lanes = type.isTruck ? [2, 3] : [0, 1, 2, 3];
     const lane = this.rng.pick(lanes);
@@ -201,6 +204,7 @@ export class TrafficManager {
         return;
       }
     }
+    o.id = 1_000_000 + ++this.oncomingSerial;
     o.type = type;
     o.s = o.prevS = s;
     o.lane = lane;
@@ -557,6 +561,37 @@ export class TrafficManager {
       r.draw(v, camera, blink);
     }
     r.end();
+  }
+
+  /**
+   * Fills `out` with render-space positions of nearby vehicles for the audio engine
+   * (both carriageways). Reuses the objects already in `out`.
+   */
+  collectSoundSources(world: World, alpha: number, focusS: number, out: SoundSource[]): number {
+    let n = 0;
+    const take = (): SoundSource => {
+      if (n >= out.length) out.push({ id: 0, position: new THREE.Vector3(), hum: 80, loudness: 1, speed: 0 });
+      return out[n++];
+    };
+    for (const car of this.active) {
+      if (Math.abs(car.s - focusS) > 180) continue;
+      const src = take();
+      src.id = car.id;
+      world.toRender(lerp(car.prevS, car.s, alpha), lerp(car.prevD, car.d, alpha), src.position, 0.8);
+      src.hum = car.type.humFrequency;
+      src.loudness = car.type.loudness;
+      src.speed = car.speed;
+    }
+    for (const o of this.oncoming) {
+      if (Math.abs(o.s - focusS) > 180) continue;
+      const src = take();
+      src.id = o.id;
+      world.toRender(lerp(o.prevS, o.s, alpha), oppositeLaneCenter(o.lane), src.position, 0.8);
+      src.hum = o.type.humFrequency;
+      src.loudness = o.type.loudness * 0.8;
+      src.speed = o.speed;
+    }
+    return n;
   }
 
   /** Lane index of the player (for HUD/AI debugging). */

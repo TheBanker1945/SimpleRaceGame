@@ -98,9 +98,10 @@ export class CameraRig {
     } else {
       const body = target.body;
       body.updateWorldMatrix(true, false);
-      cam.position.set(0, 1.12, 0.25);
+      // On the hood, just ahead of the windshield: the bonnet stays in the bottom of the frame.
+      cam.position.set(0, 1.02, 1.12);
       body.localToWorld(cam.position);
-      tmpLook.set(0, 1.0, 30);
+      tmpLook.set(0, 0.92, 30);
       body.localToWorld(tmpLook);
       // Inherit half of the body roll so the view is lively but not nauseating.
       tmpUp.set(0, 1, 0).transformDirection(body.matrixWorld).lerp(WORLD_UP, 0.5).normalize();
@@ -129,12 +130,18 @@ export class CameraRig {
     cam.updateProjectionMatrix();
   }
 
-  /** Slow orbit around the car for the title screen. */
-  updateOrbit(dt: number, center: THREE.Vector3): void {
-    this.orbitAngle += dt * 0.12;
+  /**
+   * Slow sweep around the car for the title screen, staying on its left side
+   * (over the road, never behind the guardrail).
+   * @param heading world heading of the car
+   */
+  updateOrbit(dt: number, center: THREE.Vector3, heading = 0): void {
+    this.orbitAngle += dt * 0.16;
     const cam = this.camera;
-    const r = 7.5;
-    cam.position.set(center.x + Math.sin(this.orbitAngle) * r, center.y + 2.1, center.z + Math.cos(this.orbitAngle) * r);
+    const r = 7.2;
+    // Left of the car is heading + π/2; sweep ±75° around it.
+    const a = heading + Math.PI / 2 + Math.sin(this.orbitAngle) * 1.3;
+    cam.position.set(center.x + Math.sin(a) * r, center.y + 1.9, center.z + Math.cos(a) * r);
     cam.up.set(0, 1, 0);
     tmpLook.set(center.x, center.y + 0.7, center.z);
     cam.lookAt(tmpLook);

@@ -314,10 +314,17 @@ export class CarModel {
     this.reverseLightMat.emissiveIntensity = reverse ? 2.5 : 0;
   }
 
-  setHeadlights(on: boolean): void {
+  /**
+   * @param on lamps lit (night)
+   * @param castLight also light the road with real spot lights (disabled on low quality)
+   */
+  setHeadlights(on: boolean, castLight = true): void {
     this.headlightsOn = on;
     this.headLightMat.emissiveIntensity = on ? 4 : 0.25;
-    for (const s of this.spotLights) s.intensity = on ? 90 : 0;
+    for (const s of this.spotLights) {
+      s.visible = on && castLight;
+      s.intensity = on && castLight ? 90 : 0;
+    }
   }
 
   setPaint(color: number): void {
