@@ -6,6 +6,8 @@ export interface HudState {
   redlineRPM: number;
   limiterRPM: number;
   maxRPM: number;
+  /** Speedometer full scale (km/h). */
+  maxSpeedKmh: number;
   gear: string;
   shifting: boolean;
   manual: boolean;
@@ -121,9 +123,11 @@ export class Hud {
   }
 
   resize(): void {
-    const narrow = window.innerWidth < 760;
-    this.cssW = narrow ? 300 : 420;
-    this.cssH = narrow ? 150 : 210;
+    // Phones in landscape are wide but short: size the cluster by the smaller dimension too.
+    const narrow = window.innerWidth < 760 || window.innerHeight < 520;
+    const tiny = window.innerHeight < 400;
+    this.cssW = tiny ? 250 : narrow ? 300 : 420;
+    this.cssH = tiny ? 125 : narrow ? 150 : 210;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.width = Math.round(this.cssW * dpr);
     this.canvas.height = Math.round(this.cssH * dpr);
@@ -203,7 +207,7 @@ export class Hud {
 
     // --- speedometer
     this.dialBase(speedX, cy, r);
-    const maxSpeed = 320;
+    const maxSpeed = s.maxSpeedKmh;
     ctx.save();
     ctx.translate(speedX, cy);
     for (let v = 0; v <= maxSpeed; v += 10) {

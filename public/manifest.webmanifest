@@ -1,0 +1,12 @@
+{
+  "name": "Redline Highway",
+  "short_name": "Redline",
+  "description": "A realistic endless-highway driving game in the browser.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

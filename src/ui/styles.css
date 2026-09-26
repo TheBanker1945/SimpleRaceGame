@@ -21,6 +21,9 @@ body {
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+  touch-action: none;
 }
 
 #app {
@@ -673,6 +676,441 @@ body {
   transition: opacity 0.4s;
 }
 
+/* --------------------------------------------------------------- garage */
+
+.menu-garage {
+  position: absolute;
+  left: max(4vw, 20px, env(safe-area-inset-left));
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(470px, 44vw);
+  gap: 12px;
+  animation: none;
+}
+
+.menus.garage-open {
+  background: linear-gradient(90deg, rgba(5, 7, 10, 0.9) 0%, rgba(5, 7, 10, 0.6) 38%, rgba(5, 7, 10, 0) 62%);
+}
+
+.garage-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.garage-name-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.garage-category {
+  font-size: 12px;
+  letter-spacing: 0.3em;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.garage-name {
+  margin: 2px 0 0;
+  text-transform: uppercase;
+  font-size: clamp(28px, 4.2vw, 46px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.03em;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.garage-arrow {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 18px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.garage-arrow:hover,
+.garage-arrow:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  outline: none;
+}
+
+.garage-arrow:active {
+  transform: scale(0.94);
+}
+
+.garage-dots {
+  display: flex;
+  gap: 8px;
+  margin-top: -4px;
+}
+
+.garage-dot {
+  width: 26px;
+  height: 5px;
+  border-radius: 3px;
+  border: none;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+}
+
+.garage-dot.active {
+  background: var(--accent);
+}
+
+.garage-desc {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.garage-specs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 18px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+}
+
+.garage-spec {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.garage-spec .stat-value {
+  text-align: right;
+}
+
+.garage-ratings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 18px;
+}
+
+.garage-rating {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.garage-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.garage-bar-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transform-origin: left center;
+  transition: transform 0.35s ease-out;
+}
+
+.garage-paint {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.menu-car {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--accent-2);
+}
+
+/* --------------------------------------------------------- touch controls */
+
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  touch-action: none;
+}
+
+.touch-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  touch-action: none;
+  border-radius: 18px;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  background: rgba(12, 15, 20, 0.34);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  font-size: 13px;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 0.08s, transform 0.08s, border-color 0.08s;
+}
+
+.touch-btn.active {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.7);
+  transform: scale(0.96);
+}
+
+.touch-btn svg {
+  width: 44%;
+  height: 44%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.touch-steer {
+  position: absolute;
+  left: calc(14px + env(safe-area-inset-left));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  gap: 12px;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.touch-steer .touch-btn {
+  width: clamp(76px, 22vh, 118px);
+  height: clamp(76px, 22vh, 118px);
+  border-radius: 50%;
+}
+
+.touch-pedals {
+  position: absolute;
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.touch-col,
+.touch-shift {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.touch-pedal {
+  width: clamp(72px, 19vh, 104px);
+}
+
+.touch-brake {
+  height: clamp(70px, 20vh, 100px);
+}
+
+.touch-gas {
+  height: clamp(110px, 34vh, 168px);
+  background: rgba(48, 209, 88, 0.2);
+  border-color: rgba(48, 209, 88, 0.55);
+}
+
+.touch-gas.active {
+  background: rgba(48, 209, 88, 0.45);
+}
+
+.touch-brake.active {
+  background: rgba(255, 69, 58, 0.42);
+}
+
+.touch-hb {
+  height: clamp(40px, 11vh, 54px);
+  font-size: 12px;
+}
+
+.touch-small {
+  width: clamp(48px, 13vh, 60px);
+  height: clamp(48px, 13vh, 60px);
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.touch-top {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  right: calc(12px + env(safe-area-inset-right));
+  display: flex;
+  gap: 10px;
+}
+
+.touch-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+}
+
+.touch-tilt-hint {
+  position: absolute;
+  left: calc(20px + env(safe-area-inset-left));
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  color: rgba(255, 255, 255, 0.75);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  transition: opacity 1.5s 2s;
+}
+
+.touch-tilt-hint.fade {
+  opacity: 0;
+}
+
+/* On touch screens the HUD makes room for the controls. */
+.touch .hud-aids {
+  display: none;
+}
+
+.touch .hud-damage {
+  right: calc(128px + env(safe-area-inset-right));
+}
+
+.touch .hud-score {
+  left: calc(12px + env(safe-area-inset-left));
+}
+
+.touch .hud-gauges {
+  right: auto;
+  left: 50%;
+  bottom: calc(4px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+}
+
+.touch .menu-key {
+  display: none;
+}
+
+/* ------------------------------------------------------- rotate overlay */
+
+.rotate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  background: radial-gradient(ellipse at center, #1a1f27 0%, #07090c 75%);
+  color: var(--text);
+}
+
+.rotate-overlay.visible {
+  display: flex;
+}
+
+.rotate-phone {
+  width: 140px;
+  height: 140px;
+}
+
+.rotate-device {
+  transform-origin: 60px 60px;
+  animation: rotate-phone 2.6s ease-in-out infinite;
+}
+
+.rotate-device rect {
+  fill: rgba(255, 255, 255, 0.05);
+  stroke: #ffffff;
+  stroke-width: 3.5;
+}
+
+.rotate-device line {
+  stroke: #ffffff;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.rotate-device circle {
+  fill: #ffffff;
+}
+
+.rotate-arrow,
+.rotate-arrow-head {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: rotate-arrow 2.6s ease-in-out infinite;
+}
+
+@keyframes rotate-phone {
+  0%,
+  15% {
+    transform: rotate(0deg);
+  }
+  45%,
+  80% {
+    transform: rotate(-90deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes rotate-arrow {
+  0%,
+  10% {
+    opacity: 1;
+  }
+  45%,
+  85% {
+    opacity: 0.15;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.rotate-title {
+  font-size: 22px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.14em;
+}
+
+.rotate-text {
+  max-width: 280px;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+html.portrait-blocked #app > :not(.rotate-overlay) {
+  visibility: hidden;
+}
+
+/* ------------------------------------------------------------ responsive */
+
 @media (max-width: 760px) {
   .hud-score-value {
     font-size: 28px;
@@ -692,5 +1130,136 @@ body {
   }
   .hud-banner {
     font-size: 40px;
+  }
+}
+
+/* Phones in landscape: short screens need compact menus and HUD. */
+@media (max-height: 520px) {
+  .menu-screen {
+    gap: 10px;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  .menu-start {
+    left: calc(max(4vw, 16px) + env(safe-area-inset-left));
+  }
+  .title {
+    font-size: clamp(44px, 14vh, 72px);
+  }
+  .title-kicker {
+    font-size: 11px;
+  }
+  .title-sub {
+    margin-top: 4px;
+    font-size: 13px;
+  }
+  .menu-title {
+    font-size: 30px;
+  }
+  .menu-buttons {
+    gap: 7px;
+  }
+  .menu-button {
+    padding: 9px 16px;
+    font-size: 14px;
+  }
+  .menu-hint,
+  .menu-best {
+    font-size: 12px;
+  }
+  .settings-grid {
+    grid-template-columns: 120px 1fr;
+    gap: 8px 12px;
+    padding: 12px;
+  }
+  .segment {
+    padding: 6px 10px;
+  }
+  .stats {
+    grid-template-columns: 1fr 1fr;
+    padding: 10px 14px;
+    gap: 2px 18px;
+  }
+  .stat {
+    font-size: 13px;
+    padding: 2px 0;
+  }
+  .controls-table {
+    font-size: 12px;
+  }
+  .controls-table th,
+  .controls-table td {
+    padding: 5px 10px;
+  }
+  .menu-garage {
+    width: min(460px, 50vw);
+    gap: 8px;
+  }
+  .garage-desc {
+    font-size: 12px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .garage-specs {
+    padding: 8px 12px;
+    gap: 0 14px;
+  }
+  .garage-spec {
+    font-size: 11.5px;
+    padding: 2px 0;
+  }
+  .garage-rating {
+    grid-template-columns: 84px 1fr;
+    font-size: 10.5px;
+  }
+  .garage-arrow {
+    width: 40px;
+    height: 40px;
+  }
+  .swatch {
+    width: 24px;
+    height: 24px;
+  }
+  .hud-panel {
+    padding: 6px 12px;
+  }
+  .hud-score {
+    top: calc(8px + env(safe-area-inset-top));
+    min-width: 150px;
+  }
+  .hud-score-value {
+    font-size: 26px;
+  }
+  .hud-damage {
+    top: calc(8px + env(safe-area-inset-top));
+    width: 110px;
+  }
+  .hud-center {
+    top: 8px;
+  }
+  .hud-popup-title {
+    font-size: 20px;
+  }
+  .hud-popup.close .hud-popup-title {
+    font-size: 23px;
+  }
+  .hud-banner {
+    font-size: 40px;
+  }
+}
+
+@media (max-height: 380px) {
+  .menu-best,
+  .menu-hint,
+  .title-sub {
+    display: none;
+  }
+  .garage-desc {
+    display: none;
   }
 }

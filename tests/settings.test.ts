@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, loadBestScore, loadSettings, saveBestScore, saveSettings } from '../src/core/Settings.ts';
+import { DEFAULT_SETTINGS, loadBestScore, loadSettings, paintFor, saveBestScore, saveSettings } from '../src/core/Settings.ts';
 
 class MemoryStorage {
   private data = new Map<string, string>();
@@ -37,6 +37,20 @@ describe('settings persistence', () => {
     expect(s.assists).toBe(false);
     saveBestScore(12345.7);
     expect(loadBestScore()).toBe(12345);
+  });
+
+  it('remembers the car and a paint per car, and migrates the old single paint', () => {
+    saveSettings({ ...DEFAULT_SETTINGS, car: 'vortex', paints: { vortex: 0x123456 }, steering: 'tilt' });
+    const s = loadSettings();
+    expect(s.car).toBe('vortex');
+    expect(s.paints.vortex).toBe(0x123456);
+    expect(s.steering).toBe('tilt');
+    expect(paintFor(s, 'vortex')).toBe(0x123456);
+    expect(paintFor(s, 'sprite')).toBe(0x2b6cc4);
+    localStorage.setItem('redline-highway.settings.v1', '{"paint":1193046,"car":"lambo","paints":{"falco":"red","nope":1}}');
+    const legacy = loadSettings();
+    expect(legacy.car).toBe('kestrel');
+    expect(legacy.paints).toEqual({ kestrel: 1193046 });
   });
 
   it('ignores corrupt or invalid stored values', () => {

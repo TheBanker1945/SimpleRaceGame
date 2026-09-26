@@ -12,8 +12,10 @@ import { TrafficManager } from '../traffic/TrafficManager.ts';
 import { TrafficRenderer } from '../traffic/TrafficRenderer.ts';
 import { Hud } from '../ui/Hud.ts';
 import { Menus } from '../ui/Menus.ts';
+import { RotateOverlay } from '../ui/RotateOverlay.ts';
+import { isTouchDevice, TouchControls } from '../ui/TouchControls.ts';
+import { CARS, getCar, type CarDefinition, type CarId } from '../vehicle/CarCatalog.ts';
 import { REVERSE } from '../vehicle/Gearbox.ts';
-import { DEFAULT_VEHICLE } from '../vehicle/VehicleConfig.ts';
 import { VehiclePhysics, type DriverInput } from '../vehicle/VehiclePhysics.ts';
 import type { TimeOfDay } from '../world/Environment.ts';
 import { BARRIER_LEFT, BARRIER_RIGHT, LANES_HALF_WIDTH, laneCenter, RIGHT_SHOULDER } from '../world/RoadConstants.ts';
@@ -21,7 +23,7 @@ import { World, type RenderPose } from '../world/World.ts';
 import { FixedStepLoop } from './FixedStepLoop.ts';
 import { clamp, clamp01, lerp, MS_TO_KMH, smoothstep } from './math.ts';
 import { COMBO_WINDOW, Scoring } from './Scoring.ts';
-import { loadBestScore, loadSettings, saveBestScore, saveSettings, type Settings } from './Settings.ts';
+import { loadBestScore, loadSettings, paintFor, saveBestScore, saveSettings, type Settings } from './Settings.ts';
 
 export type GameState = 'menu' | 'playing' | 'paused' | 'crashing' | 'gameover';
 
@@ -49,13 +51,20 @@ export class Game {
   private readonly world: World;
   private readonly input = new Input();
   private readonly loop = new FixedStepLoop(PHYSICS_STEP);
-  private readonly car = new VehiclePhysics(DEFAULT_VEHICLE);
-  private readonly carModel: CarModel;
+  private carDef: CarDefinition;
+  private car: VehiclePhysics;
+  private carModel: CarModel;
+  /** Built car models, so flipping through the garage only builds each car once. */
+  private readonly models = new Map<CarId, CarModel>();
   private readonly cameraRig: CameraRig;
   private readonly traffic: TrafficManager;
   private readonly audio = new AudioEngine();
   private readonly hud: Hud;
   private readonly menus: Menus;
+  private readonly touch: TouchControls | null;
+  private readonly rotate: RotateOverlay;
+  private readonly isTouch: boolean;
+  private framing = 0;
   private readonly scoring = new Scoring();
   private readonly effects = new Effects();
   private effectsOriginX = 0;
@@ -96,8 +105,8 @@ export class Game {
   private readonly camTarget: CameraTarget;
   private readonly soundState: CarSoundState = {
     rpm: 0,
-    idleRPM: DEFAULT_VEHICLE.idleRPM,
-    limiterRPM: DEFAULT_VEHICLE.limiterRPM,
+    idleRPM: 850,
+    limiterRPM: 7500,
     load: 0,
     throttle: 0,
     limiterCutting: false,
@@ -118,32 +127,55 @@ export class Game {
     const q = params.get('quality');
     if (q === 'low' || q === 'medium' || q === 'high') this.settings.quality = q;
     this.orbitOnly = params.get('view') === 'orbit';
+    this.isTouch = isTouchDevice() || params.has('touch');
+    document.documentElement.classList.toggle('touch', this.isTouch);
 
     this.renderer = new Renderer(container, this.settings.quality);
     this.world = new World(this.renderer.renderer, this.renderer.scene, this.renderer.maxAnisotropy);
-    this.carModel = new CarModel(DEFAULT_VEHICLE, { paint: this.settings.paint, withHeadlightLights: true });
-    this.carModel.root.traverse((o) => {
-      if (o instanceof THREE.Mesh) o.castShadow = true;
-    });
+    this.carDef = getCar(this.settings.car);
+    this.car = new VehiclePhysics(this.carDef.config);
+    this.carModel = this.modelFor(this.carDef);
     this.renderer.scene.add(this.carModel.root);
     this.cameraRig = new CameraRig(this.renderer.aspect);
-    this.camTarget = { position: this.pose.position, yaw: 0, body: this.carModel.body, speed: 0, accel: 0, lateralAccel: 0 };
+    this.camTarget = {
+      position: this.pose.position,
+      yaw: 0,
+      body: this.carModel.body,
+      hoodEye: this.carModel.hoodEye,
+      hoodLook: this.carModel.hoodLook,
+      speed: 0,
+      accel: 0,
+      lateralAccel: 0,
+    };
+    this.audio.setEngineSound(this.carDef.sound);
+    this.soundState.idleRPM = this.carDef.config.idleRPM;
+    this.soundState.limiterRPM = this.carDef.config.limiterRPM;
     const trafficRenderer = new TrafficRenderer(24, 260);
     this.renderer.scene.add(trafficRenderer.group);
     this.traffic = new TrafficManager(trafficRenderer);
     this.renderer.scene.add(this.effects.group);
 
     this.hud = new Hud(container);
-    this.menus = new Menus(container, this.settings, {
-      start: () => this.startRun(),
-      resume: () => this.resume(),
-      restart: () => this.startRun(),
-      quitToMenu: () => this.enterMenu(),
-      settingsChanged: (s, key) => this.onSettingsChanged(s, key),
-      click: () => {
-        this.audio.init();
-        this.audio.playUiClick();
+    this.touch = this.isTouch ? new TouchControls(container, this.input) : null;
+    this.menus = new Menus(
+      container,
+      this.settings,
+      {
+        start: () => this.startRun(),
+        resume: () => this.resume(),
+        restart: () => this.startRun(),
+        quitToMenu: () => this.enterMenu(),
+        settingsChanged: (s, key) => this.onSettingsChanged(s, key),
+        carChanged: (id) => this.selectCar(id),
+        click: () => {
+          this.audio.init();
+          this.audio.playUiClick();
+        },
       },
+      this.isTouch,
+    );
+    this.rotate = new RotateOverlay(container, this.isTouch, (blocking) => {
+      if (blocking && this.state === 'playing') this.pause();
     });
 
     this.applyAllSettings();
@@ -155,14 +187,89 @@ export class Game {
    * Small scripting surface for automated browser tests (enabled with `?debug`):
    * read the state and trigger a crash without having to aim the car.
    */
-  debugApi(): { state: () => GameState; speed: () => number; crash: () => void; score: () => number; traffic: () => number } {
+  debugApi(): {
+    state: () => GameState;
+    speed: () => number;
+    crash: () => void;
+    score: () => number;
+    traffic: () => number;
+    car: () => CarId;
+    selectCar: (id: CarId) => void;
+  } {
     return {
       state: () => this.state,
       speed: () => this.car.speed * MS_TO_KMH,
       crash: () => this.crash('Debug crash', 1),
       score: () => this.scoring.score,
       traffic: () => this.traffic.active.length,
+      car: () => this.carDef.id,
+      selectCar: (id) => {
+        this.settings.car = id;
+        this.selectCar(id);
+      },
     };
+  }
+
+  // -------------------------------------------------------------- car choice
+
+  private modelFor(def: CarDefinition): CarModel {
+    let model = this.models.get(def.id);
+    if (!model) {
+      model = new CarModel(def, { paint: paintFor(this.settings, def.id), withHeadlightLights: true });
+      model.root.traverse((o) => {
+        if (o instanceof THREE.Mesh) o.castShadow = true;
+      });
+      this.models.set(def.id, model);
+    }
+    return model;
+  }
+
+  /** Builds the other cars one at a time while the menu idles, so the garage flips instantly. */
+  private prebuildModels(): void {
+    const queue = CARS.filter((c) => !this.models.has(c.id));
+    const idle = (cb: () => void): void => {
+      const ric = (window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+      if (ric) ric(cb, { timeout: 3000 });
+      else setTimeout(cb, 400);
+    };
+    const next = (): void => {
+      const def = queue.shift();
+      if (!def) return;
+      // Only while nobody is driving: a build takes a few hundred ms.
+      if (this.state === 'menu') this.modelFor(def);
+      else queue.push(def);
+      setTimeout(() => idle(next), 700);
+    };
+    setTimeout(() => idle(next), 2500);
+  }
+
+  /** Swaps in another car (physics, model, sound). Only used from the menus, with the car parked. */
+  private selectCar(id: CarId): void {
+    const def = getCar(id);
+    if (def.id === this.carDef.id) return;
+    const { s, d } = this.car;
+    this.carDef = def;
+    this.car = new VehiclePhysics(def.config);
+    this.car.gearbox.mode = this.settings.transmission;
+    this.car.absEnabled = this.car.tcsEnabled = this.car.escEnabled = this.settings.assists;
+    this.car.reset(s, d, 0);
+    this.prevS = this.car.s;
+    this.prevD = this.car.d;
+    this.prevPsi = this.car.psi;
+    this.lastShiftCount = this.car.gearbox.shiftCount;
+
+    this.renderer.scene.remove(this.carModel.root);
+    this.carModel = this.modelFor(def);
+    this.renderer.scene.add(this.carModel.root);
+    this.carModel.setPaint(paintFor(this.settings, def.id));
+    this.carModel.setHeadlights(this.world.isNight, this.renderer.profile.headlightSpots);
+    this.camTarget.body = this.carModel.body;
+    this.camTarget.hoodEye = this.carModel.hoodEye;
+    this.camTarget.hoodLook = this.carModel.hoodLook;
+
+    this.audio.setEngineSound(def.sound);
+    this.soundState.idleRPM = def.config.idleRPM;
+    this.soundState.limiterRPM = def.config.limiterRPM;
   }
 
   // ------------------------------------------------------------------ setup
@@ -174,10 +281,11 @@ export class Game {
     this.world.applySettings(this.renderer.profile, s.timeOfDay);
     this.traffic.setDrawDistance(this.renderer.profile.drawDistance);
     this.carModel.setHeadlights(this.world.isNight, this.renderer.profile.headlightSpots);
-    this.carModel.setPaint(s.paint);
+    this.carModel.setPaint(paintFor(s, this.carDef.id));
     this.car.gearbox.mode = s.transmission;
     this.car.absEnabled = this.car.tcsEnabled = this.car.escEnabled = s.assists;
     this.audio.setVolume(s.volume);
+    this.touch?.setManual(s.transmission === 'manual');
   }
 
   private onSettingsChanged(s: Settings, key: keyof Settings): void {
@@ -196,12 +304,20 @@ export class Game {
         break;
       case 'transmission':
         this.car.gearbox.mode = s.transmission;
+        this.touch?.setManual(s.transmission === 'manual');
         break;
       case 'assists':
         this.car.absEnabled = this.car.tcsEnabled = this.car.escEnabled = s.assists;
         break;
-      case 'paint':
-        this.carModel.setPaint(s.paint);
+      case 'paints':
+        this.carModel.setPaint(paintFor(s, this.carDef.id));
+        break;
+      case 'steering':
+        // Changed by a tap, so iOS can show its motion-permission prompt now.
+        this.touch?.setTilt(s.steering === 'tilt');
+        break;
+      case 'car':
+        // The garage already swapped the car through carChanged.
         break;
       case 'volume':
         this.audio.setVolume(s.volume);
@@ -217,9 +333,33 @@ export class Game {
       this.cameraRig.camera.aspect = this.renderer.aspect;
       this.hud.resize();
     });
+    // Drag to spin the car in the garage (mouse or finger).
+    const canvas = this.renderer.renderer.domElement;
+    let dragId: number | null = null;
+    let dragX = 0;
+    const dragTarget = this.container;
+    dragTarget.addEventListener('pointerdown', (e) => {
+      if (this.state !== 'menu' || this.menus.activeScreen !== 'garage') return;
+      if (e.target !== canvas && !(e.target as HTMLElement).classList?.contains('menus')) return;
+      dragId = e.pointerId;
+      dragX = e.clientX;
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== dragId) return;
+      this.cameraRig.drag(dragX - e.clientX);
+      dragX = e.clientX;
+    });
+    const endDrag = (e: PointerEvent): void => {
+      if (e.pointerId === dragId) dragId = null;
+    };
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
     // Browsers only allow audio after a user gesture.
     const unlock = (): void => this.audio.init();
     window.addEventListener('pointerdown', unlock);
+    // iOS only unlocks Web Audio from touchend/click, not touchstart.
+    window.addEventListener('touchend', unlock);
+    window.addEventListener('click', unlock);
     window.addEventListener('keydown', unlock);
     // Auto-pause when the tab loses focus.
     document.addEventListener('visibilitychange', () => {
@@ -268,6 +408,7 @@ export class Game {
     this.timeScale = 1;
     this.resetWorld(-LANES_HALF_WIDTH - RIGHT_SHOULDER / 2 - 0.2, 0);
     this.hud.show(false);
+    this.touch?.show(false);
     this.menus.showStart(this.best);
     this.input.clearPresses();
     this.audio.resume();
@@ -275,6 +416,7 @@ export class Game {
 
   startRun(): void {
     this.audio.init();
+    if (this.isTouch) this.enterMobileFullscreen();
     this.resetWorld(laneCenter(2), START_SPEED_KMH);
     this.scoring.reset();
     this.damage = 0;
@@ -284,22 +426,54 @@ export class Game {
     this.state = 'playing';
     this.menus.show(null);
     this.hud.show(true);
+    this.showTouchControls(true);
     this.input.clearPresses();
     this.cameraRig.reset(this.cameraTarget());
     this.audio.resume();
+  }
+
+  private showTouchControls(visible: boolean): void {
+    if (!this.touch) return;
+    this.touch.show(visible);
+    if (visible) {
+      this.touch.setManual(this.settings.transmission === 'manual');
+      this.touch.setTilt(this.settings.steering === 'tilt');
+    }
+  }
+
+  /**
+   * Phones: go fullscreen and lock to landscape when a run starts (needs the tap that
+   * started it). Unsupported browsers (iPhone Safari) just keep the rotate prompt.
+   */
+  private enterMobileFullscreen(): void {
+    const root = document.documentElement;
+    const lock = (): void => {
+      const o = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
+      o?.lock?.('landscape').catch(() => undefined);
+    };
+    if (!document.fullscreenElement && root.requestFullscreen) {
+      root
+        .requestFullscreen({ navigationUI: 'hide' })
+        .then(lock)
+        .catch(() => undefined);
+    } else {
+      lock();
+    }
   }
 
   private pause(): void {
     if (this.state !== 'playing') return;
     this.state = 'paused';
     this.menus.show('pause');
+    this.showTouchControls(false);
     this.audio.suspend();
   }
 
   private resume(): void {
-    if (this.state !== 'paused') return;
+    if (this.state !== 'paused' || this.rotate.isBlocking) return;
     this.state = 'playing';
     this.menus.show(null);
+    this.showTouchControls(true);
     this.input.clearPresses();
     this.audio.resume();
   }
@@ -317,6 +491,7 @@ export class Game {
   private gameOver(): void {
     this.state = 'gameover';
     this.timeScale = 1;
+    this.showTouchControls(false);
     const score = Math.floor(this.scoring.score);
     const newBest = score > this.best;
     if (newBest) {
@@ -344,6 +519,7 @@ export class Game {
   // --------------------------------------------------------------------- loop
 
   start(): void {
+    this.prebuildModels();
     this.lastTime = performance.now();
     const frame = (now: number): void => {
       const dt = Math.min((now - this.lastTime) / 1000, 0.1);
@@ -358,10 +534,17 @@ export class Game {
     const input = this.input;
     if (input.consume('fullscreen')) this.toggleFullscreen();
     switch (this.state) {
-      case 'menu':
+      case 'menu': {
+        const screen = this.menus.activeScreen;
         if (input.consume('pause')) this.menus.back();
-        if (input.consume('confirm') && this.menus.activeScreen === 'start') this.startRun();
+        if (screen === 'garage') {
+          if (input.consume('left')) this.menus.garageStep(-1);
+          if (input.consume('right')) this.menus.garageStep(1);
+        }
+        if (input.consume('garage') && screen === 'start') this.menus.open('garage', 'start');
+        if (input.consume('confirm') && (screen === 'start' || screen === 'garage')) this.startRun();
         break;
+      }
       case 'playing':
         if (input.consume('pause')) this.pause();
         else if (input.consume('restart')) this.startRun();
@@ -405,6 +588,11 @@ export class Game {
   }
 
   private frame(dt: number): void {
+    // Portrait on a phone: the rotate prompt covers everything, so don't spend battery rendering.
+    if (this.rotate.isBlocking) {
+      this.input.clearPresses();
+      return;
+    }
     this.fps = lerp(this.fps, dt > 0 ? 1 / dt : 60, 0.05);
     this.input.update(dt, this.car.speed);
     this.handleActions();
@@ -539,7 +727,9 @@ export class Game {
     this.carModel.setLights(car.appliedBrake, car.gearbox.gear === REVERSE);
 
     const camera = this.cameraRig.camera;
-    if (this.state === 'menu' || this.orbitOnly) this.cameraRig.updateOrbit(dt, this.pose.position, this.pose.yaw);
+    this.updateFraming();
+    const garage = this.state === 'menu' && this.menus.activeScreen === 'garage';
+    if (this.state === 'menu' || this.orbitOnly) this.cameraRig.updateOrbit(dt, this.pose.position, this.pose.yaw, garage);
     else this.cameraRig.update(this.state === 'paused' ? 0 : dt, this.cameraTarget());
     this.traffic.render(a, this.world, camera, this.world.isNight);
     this.updateEffects(this.state === 'paused' ? 0 : dt * this.timeScale);
@@ -551,6 +741,17 @@ export class Game {
 
     this.framesRendered++;
     if (this.framesRendered === 3) document.getElementById('loading')?.classList.add('hidden');
+  }
+
+  /** In the menus the car is framed beside the menu panel (on wide screens). */
+  private updateFraming(): void {
+    const wide = window.innerWidth > window.innerHeight * 1.15 && window.innerWidth >= 640;
+    let target = 0;
+    if (this.state === 'menu' && wide) target = this.menus.activeScreen === 'garage' ? 0.2 : this.menus.activeScreen === 'start' ? 0.12 : 0;
+    if (target !== this.framing) {
+      this.framing = target;
+      this.cameraRig.setFraming(target);
+    }
   }
 
   /** Tire smoke, skid marks and sparks for the player's car. */
@@ -604,7 +805,7 @@ export class Game {
     st.speed = car.speed;
     st.slip = car.speed > 2 ? car.maxSlip : 0;
     // Right wheels over the rumble strip next to the right edge line.
-    const rightWheel = car.d - DEFAULT_VEHICLE.trackRear / 2;
+    const rightWheel = car.d - car.cfg.trackRear / 2;
     st.onRumbleStrip = rightWheel < -LANES_HALF_WIDTH - 0.12 && rightWheel > -LANES_HALF_WIDTH - 0.6;
     st.scrapeAge = this.scrapeAge;
     const n = this.traffic.collectSoundSources(this.world, this.loop.alpha, car.s, this.sources);
@@ -620,7 +821,8 @@ export class Game {
       rpm: car.rpm,
       redlineRPM: cfg.redlineRPM,
       limiterRPM: cfg.limiterRPM,
-      maxRPM: 8000,
+      maxRPM: Math.ceil((cfg.limiterRPM + 300) / 1000) * 1000,
+      maxSpeedKmh: this.carDef.specs.topSpeedKmh > 290 ? 360 : 320,
       gear: car.gearbox.gearLabel(),
       shifting: car.gearbox.isShifting(),
       manual: car.gearbox.mode === 'manual',

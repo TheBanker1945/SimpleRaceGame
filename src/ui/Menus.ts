@@ -1,6 +1,7 @@
-import { PAINT_OPTIONS, type Settings } from '../core/Settings.ts';
+import { paintFor, PAINT_OPTIONS, type Settings } from '../core/Settings.ts';
+import { CARS, getCar, type CarId } from '../vehicle/CarCatalog.ts';
 
-export type MenuScreen = 'start' | 'pause' | 'gameover' | 'settings' | 'controls' | null;
+export type MenuScreen = 'start' | 'pause' | 'gameover' | 'settings' | 'controls' | 'garage' | null;
 
 export interface GameOverStats {
   score: number;
@@ -23,6 +24,8 @@ export interface MenuCallbacks {
   restart(): void;
   quitToMenu(): void;
   settingsChanged(settings: Settings, changed: keyof Settings): void;
+  /** The garage is showing a different car (live preview). */
+  carChanged(id: CarId): void;
   click(): void;
 }
 
@@ -50,6 +53,17 @@ const CONTROLS: [string, string, string][] = [
   ['Fullscreen', 'F', '—'],
 ];
 
+const TOUCH_CONTROLS: [string, string][] = [
+  ['Steer', '◀ ▶ buttons, bottom left (or tilt the phone, see Settings)'],
+  ['Throttle', 'GAS pedal, bottom right'],
+  ['Brake / reverse', 'BRAKE pedal (hold at a standstill to reverse)'],
+  ['Handbrake', 'HB button above the pedals'],
+  ['Shift (manual)', '+ / − buttons next to the pedals'],
+  ['Camera / pause', 'Buttons at the top right'],
+];
+
+const hex = (c: number): string => `#${c.toString(16).padStart(6, '0')}`;
+
 /** DOM overlay menus. All game actions go through the callbacks. */
 export class Menus {
   private readonly root: HTMLElement;
@@ -58,16 +72,20 @@ export class Menus {
   private returnTo: MenuScreen = 'start';
   private readonly settings: Settings;
   private readonly cb: MenuCallbacks;
+  private readonly touch: boolean;
   private readonly startBest: HTMLElement;
+  private readonly startCar: HTMLElement;
   private readonly overStats: HTMLElement;
   private readonly overTitle: HTMLElement;
   private readonly overReason: HTMLElement;
   private readonly overBadge: HTMLElement;
   private readonly settingControls: (() => void)[] = [];
+  private readonly garageRefresh: () => void;
 
-  constructor(parent: HTMLElement, settings: Settings, callbacks: MenuCallbacks) {
+  constructor(parent: HTMLElement, settings: Settings, callbacks: MenuCallbacks, touch: boolean) {
     this.settings = settings;
     this.cb = callbacks;
+    this.touch = touch;
     this.root = el('div', 'menus', parent);
 
     // ------------------------------------------------------------ start
@@ -75,13 +93,110 @@ export class Menus {
     const title = el('div', 'title-block', start);
     el('div', 'title-kicker', title, 'ENDLESS HIGHWAY');
     el('h1', 'title', title, 'REDLINE');
-    el('div', 'title-sub', title, 'Weave through traffic at 280 km/h. Near misses build combos. Don’t crash.');
+    el('div', 'title-sub', title, 'Weave through traffic at 300 km/h. Near misses build combos. Don’t crash.');
     const startButtons = el('div', 'menu-buttons', start);
     this.button(startButtons, 'DRIVE', () => this.cb.start(), 'primary', 'Enter');
+    const garageButton = this.button(startButtons, 'GARAGE', () => this.open('garage', 'start'), 'garage-button', 'G');
+    this.startCar = el('span', 'menu-car', garageButton, '');
+    garageButton.insertBefore(this.startCar, garageButton.lastChild);
     this.button(startButtons, 'SETTINGS', () => this.open('settings', 'start'));
     this.button(startButtons, 'CONTROLS', () => this.open('controls', 'start'));
     this.startBest = el('div', 'menu-best', start, '');
-    el('div', 'menu-hint', start, 'Keyboard or gamepad · Headphones recommended');
+    el('div', 'menu-hint', start, touch ? 'Touch controls · Play in landscape · Headphones recommended' : 'Keyboard or gamepad · Headphones recommended');
+
+    // ------------------------------------------------------------ garage
+    const garage = this.screen('garage');
+    const head = el('div', 'garage-head', garage);
+    el('div', 'title-kicker', head, 'GARAGE · CHOOSE YOUR CAR');
+    const nav = el('div', 'garage-nav', garage);
+    const prev = el('button', 'garage-arrow', nav, '◀');
+    prev.setAttribute('aria-label', 'Previous car');
+    const nameBlock = el('div', 'garage-name-block', nav);
+    const category = el('div', 'garage-category', nameBlock, '');
+    const name = el('h2', 'garage-name', nameBlock, '');
+    const next = el('button', 'garage-arrow', nav, '▶');
+    next.setAttribute('aria-label', 'Next car');
+    const dots = el('div', 'garage-dots', garage);
+    const dotEls = CARS.map((c) => {
+      const d = el('button', 'garage-dot', dots);
+      d.title = c.name;
+      d.setAttribute('aria-label', c.name);
+      d.addEventListener('click', () => {
+        this.cb.click();
+        this.selectCar(c.id);
+      });
+      return d;
+    });
+    const desc = el('p', 'garage-desc', garage, '');
+    const specs = el('div', 'garage-specs', garage);
+    const ratings = el('div', 'garage-ratings', garage);
+    const paintRow = el('div', 'garage-paint', garage);
+    el('div', 'setting-label', paintRow, 'Paint');
+    const swatchWrap = el('div', 'swatches', paintRow);
+    const swatches = PAINT_OPTIONS.map((p) => {
+      const b = el('button', 'swatch', swatchWrap);
+      b.title = p.name;
+      b.setAttribute('aria-label', p.name);
+      b.style.background = hex(p.color);
+      b.addEventListener('click', () => {
+        this.cb.click();
+        this.settings.paints = { ...this.settings.paints, [this.settings.car]: p.color };
+        this.garageRefresh();
+        this.cb.settingsChanged(this.settings, 'paints');
+      });
+      return { b, color: p.color };
+    });
+    const garageButtons = el('div', 'menu-buttons row', garage);
+    this.button(garageButtons, 'DRIVE', () => this.cb.start(), 'primary', 'Enter');
+    this.button(garageButtons, 'BACK', () => this.back(), '', 'Esc');
+    prev.addEventListener('click', () => {
+      this.cb.click();
+      this.garageStep(-1);
+    });
+    next.addEventListener('click', () => {
+      this.cb.click();
+      this.garageStep(1);
+    });
+    this.garageRefresh = () => {
+      const car = getCar(this.settings.car);
+      category.textContent = car.category;
+      name.textContent = car.name;
+      desc.textContent = car.description;
+      dotEls.forEach((d, i) => d.classList.toggle('active', CARS[i].id === car.id));
+      specs.replaceChildren();
+      const rows: [string, string][] = [
+        ['Power', `${car.specs.powerHp} hp`],
+        ['Torque', `${car.specs.torqueNm} Nm`],
+        ['0–100 km/h', `${car.specs.zeroToHundred.toFixed(1)} s`],
+        ['Top speed', `${car.specs.topSpeedKmh} km/h`],
+        ['Weight', `${fmt(car.specs.weightKg)} kg`],
+        ['Gearbox', `${car.specs.gears}-speed`],
+        ['Engine', car.specs.engine],
+        ['Layout', car.specs.layout],
+      ];
+      for (const [k, v] of rows) {
+        const row = el('div', 'garage-spec', specs);
+        el('span', 'stat-label', row, k);
+        el('span', 'stat-value', row, v);
+      }
+      ratings.replaceChildren();
+      const bars: [string, number][] = [
+        ['Speed', car.ratings.speed],
+        ['Acceleration', car.ratings.acceleration],
+        ['Handling', car.ratings.handling],
+        ['Braking', car.ratings.braking],
+      ];
+      for (const [k, v] of bars) {
+        const row = el('div', 'garage-rating', ratings);
+        el('span', 'stat-label', row, k);
+        const bar = el('span', 'garage-bar', row);
+        const fill = el('span', 'garage-bar-fill', bar);
+        fill.style.transform = `scaleX(${v})`;
+      }
+      const paint = paintFor(this.settings, car.id);
+      for (const s of swatches) s.b.classList.toggle('active', s.color === paint);
+      this.startCar.textContent = car.name.toUpperCase();
+    };
 
     // ------------------------------------------------------------ pause
     const pause = this.screen('pause');
@@ -111,6 +226,12 @@ export class Menus {
       ['automatic', 'Automatic'],
       ['manual', 'Manual'],
     ]);
+    if (touch) {
+      this.segmented(grid, 'Steering', 'steering', [
+        ['buttons', 'Buttons'],
+        ['tilt', 'Tilt phone'],
+      ]);
+    }
     this.segmented(grid, 'Graphics', 'quality', [
       ['low', 'Low'],
       ['medium', 'Medium'],
@@ -126,7 +247,6 @@ export class Menus {
       [false, 'Off'],
     ]);
     this.volumeSlider(grid);
-    this.paintPicker(grid);
     this.segmented(grid, 'FPS counter', 'showFps', [
       [false, 'Hidden'],
       [true, 'Shown'],
@@ -138,15 +258,25 @@ export class Menus {
     const ctl = this.screen('controls');
     el('h2', 'menu-title', ctl, 'CONTROLS');
     const table = el('table', 'controls-table', ctl);
-    const head = el('tr', '', table);
-    el('th', '', head, 'Action');
-    el('th', '', head, 'Keyboard');
-    el('th', '', head, 'Gamepad');
-    for (const [action, key, pad] of CONTROLS) {
-      const row = el('tr', '', table);
-      el('td', '', row, action);
-      el('td', 'key', row, key);
-      el('td', 'key', row, pad);
+    const headRow = el('tr', '', table);
+    if (touch) {
+      el('th', '', headRow, 'Action');
+      el('th', '', headRow, 'Touch');
+      for (const [action, how] of TOUCH_CONTROLS) {
+        const row = el('tr', '', table);
+        el('td', '', row, action);
+        el('td', '', row, how);
+      }
+    } else {
+      el('th', '', headRow, 'Action');
+      el('th', '', headRow, 'Keyboard');
+      el('th', '', headRow, 'Gamepad');
+      for (const [action, key, pad] of CONTROLS) {
+        const row = el('tr', '', table);
+        el('td', '', row, action);
+        el('td', 'key', row, key);
+        el('td', 'key', row, pad);
+      }
     }
     el(
       'p',
@@ -156,10 +286,16 @@ export class Menus {
     );
     const ctlButtons = el('div', 'menu-buttons', ctl);
     this.button(ctlButtons, 'BACK', () => this.back(), 'primary', 'Esc');
+
+    this.garageRefresh();
   }
 
   get activeScreen(): MenuScreen {
     return this.current;
+  }
+
+  get isTouch(): boolean {
+    return this.touch;
   }
 
   private screen(name: Exclude<MenuScreen, null>): HTMLElement {
@@ -170,7 +306,7 @@ export class Menus {
 
   private button(parent: HTMLElement, label: string, action: () => void, variant = '', hint = ''): HTMLButtonElement {
     const b = el('button', `menu-button ${variant}`, parent);
-    el('span', '', b, label);
+    el('span', 'menu-label', b, label);
     if (hint) el('span', 'menu-key', b, hint);
     b.addEventListener('click', (e) => {
       e.preventDefault();
@@ -224,38 +360,31 @@ export class Menus {
     refresh();
   }
 
-  private paintPicker(parent: HTMLElement): void {
-    el('div', 'setting-label', parent, 'Paint');
-    const wrap = el('div', 'swatches', parent);
-    const swatches: [HTMLButtonElement, number][] = [];
-    for (const p of PAINT_OPTIONS) {
-      const b = el('button', 'swatch', wrap);
-      b.title = p.name;
-      b.style.background = `#${p.color.toString(16).padStart(6, '0')}`;
-      b.addEventListener('click', () => {
-        this.cb.click();
-        this.settings.paint = p.color;
-        refresh();
-        this.cb.settingsChanged(this.settings, 'paint');
-      });
-      swatches.push([b, p.color]);
-    }
-    const refresh = (): void => {
-      for (const [b, c] of swatches) b.classList.toggle('active', this.settings.paint === c);
-    };
-    this.settingControls.push(refresh);
-    refresh();
+  /** Shows the previous/next car in the garage. */
+  garageStep(dir: number): void {
+    const i = CARS.findIndex((c) => c.id === this.settings.car);
+    const n = CARS.length;
+    this.selectCar(CARS[(((i + dir) % n) + n) % n].id);
   }
 
-  private open(screen: Exclude<MenuScreen, null>, returnTo: MenuScreen): void {
+  private selectCar(id: CarId): void {
+    if (id === this.settings.car) return;
+    this.settings.car = id;
+    this.garageRefresh();
+    this.cb.carChanged(id);
+    this.cb.settingsChanged(this.settings, 'car');
+  }
+
+  open(screen: Exclude<MenuScreen, null>, returnTo: MenuScreen): void {
     this.returnTo = returnTo;
     for (const r of this.settingControls) r();
+    if (screen === 'garage') this.garageRefresh();
     this.show(screen);
   }
 
-  /** Goes back from settings/controls. Returns true if it handled the request. */
+  /** Goes back from settings/controls/garage. Returns true if it handled the request. */
   back(): boolean {
-    if (this.current === 'settings' || this.current === 'controls') {
+    if (this.current === 'settings' || this.current === 'controls' || this.current === 'garage') {
       this.show(this.returnTo);
       return true;
     }
@@ -266,10 +395,12 @@ export class Menus {
     this.current = screen;
     for (const [name, s] of this.screens) s.classList.toggle('visible', name === screen);
     this.root.classList.toggle('visible', screen !== null);
+    this.root.classList.toggle('garage-open', screen === 'garage');
   }
 
   showStart(best: number): void {
     this.startBest.textContent = best > 0 ? `BEST SCORE  ${fmt(best)}` : '';
+    this.garageRefresh();
     this.show('start');
   }
 

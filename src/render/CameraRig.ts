@@ -10,6 +10,9 @@ export interface CameraTarget {
   yaw: number;
   /** Car body object (includes suspension motion) for the hood camera. */
   body: THREE.Object3D;
+  /** Hood camera eye and look-at point in body coordinates (per car). */
+  hoodEye: THREE.Vector3;
+  hoodLook: THREE.Vector3;
   /** Speed over ground (m/s). */
   speed: number;
   /** Longitudinal / lateral acceleration (m/s²). */
@@ -38,6 +41,9 @@ export class CameraRig {
   private trauma = 0;
   private time = 0;
   private orbitAngle = 0;
+  /** Extra orbit angle from dragging in the garage (rad). */
+  private orbitDrag = 0;
+  private framing = 0;
   private initialized = false;
   private readonly phases = [Math.random() * 10, Math.random() * 10, Math.random() * 10, Math.random() * 10];
 
@@ -48,6 +54,32 @@ export class CameraRig {
   toggle(): CameraMode {
     this.mode = this.mode === 'chase' ? 'hood' : 'chase';
     return this.mode;
+  }
+
+  /**
+   * Shifts the image sideways by a fraction of the width (positive = subject to the right),
+   * so a menu panel can sit beside the car.
+   */
+  setFraming(shift: number): void {
+    this.framing = Math.abs(shift) < 1e-4 ? 0 : shift;
+    if (this.framing === 0) this.camera.clearViewOffset();
+    this.applyFraming();
+  }
+
+  /** Re-applies the sideways shift for the current aspect (setViewOffset also sets the aspect). */
+  private applyFraming(): void {
+    const cam = this.camera;
+    if (this.framing !== 0) {
+      const aspect = cam.aspect;
+      cam.setViewOffset(aspect, 1, -this.framing * aspect, 0, aspect, 1);
+    } else {
+      cam.updateProjectionMatrix();
+    }
+  }
+
+  /** Rotates the garage orbit by a drag (pixels → radians). */
+  drag(dxPixels: number): void {
+    this.orbitDrag += dxPixels * 0.006;
   }
 
   /** Adds impact shake (0..1). */
@@ -94,9 +126,9 @@ export class CameraRig {
       const body = target.body;
       body.updateWorldMatrix(true, false);
       // On the hood, just ahead of the windshield: the bonnet stays in the bottom of the frame.
-      cam.position.set(0, 1.02, 1.12);
+      cam.position.copy(target.hoodEye);
       body.localToWorld(cam.position);
-      tmpLook.set(0, 0.92, 30);
+      tmpLook.copy(target.hoodLook);
       body.localToWorld(tmpLook);
       // Inherit half of the body roll so the view is lively but not nauseating.
       tmpUp.set(0, 1, 0).transformDirection(body.matrixWorld).lerp(WORLD_UP, 0.5).normalize();
@@ -130,18 +162,22 @@ export class CameraRig {
    * (over the road, never behind the guardrail).
    * @param heading world heading of the car
    */
-  updateOrbit(dt: number, center: THREE.Vector3, heading = 0): void {
-    this.orbitAngle += dt * 0.16;
+  updateOrbit(dt: number, center: THREE.Vector3, heading = 0, garage = false): void {
     const cam = this.camera;
-    const r = 7.2;
-    // Left of the car is heading + π/2; sweep ±75° around it.
-    const a = heading + Math.PI / 2 + Math.sin(this.orbitAngle) * 1.3;
-    cam.position.set(center.x + Math.sin(a) * r, center.y + 1.9, center.z + Math.cos(a) * r);
+    // The slow sweep plus whatever the player dragged in the garage.
+    this.orbitAngle += dt * (garage ? 0.09 : 0.16);
+    const r = garage ? 8.2 : 7.2;
+    // Left of the car is heading + π/2; sweep ±75° around it (never behind the guardrail).
+    const sweep = Math.sin(this.orbitAngle) * (garage ? 0.9 : 1.3) + this.orbitDrag;
+    const clamped = clamp(sweep, -1.45, 1.45);
+    if (clamped !== sweep) this.orbitDrag -= sweep - clamped;
+    const a = heading + Math.PI / 2 + clamped;
+    cam.position.set(center.x + Math.sin(a) * r, center.y + (garage ? 1.75 : 1.9), center.z + Math.cos(a) * r);
     cam.up.set(0, 1, 0);
-    tmpLook.set(center.x, center.y + 0.7, center.z);
+    tmpLook.set(center.x, center.y + (garage ? 0.55 : 0.7), center.z);
     cam.lookAt(tmpLook);
-    cam.fov = 50;
-    cam.updateProjectionMatrix();
+    cam.fov = garage ? 34 : 50;
+    this.applyFraming();
     this.initialized = false;
   }
 }

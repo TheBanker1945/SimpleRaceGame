@@ -1,6 +1,10 @@
 import type { Quality } from '../render/Renderer.ts';
+import { DEFAULT_CAR, getCar, isCarId, type CarId } from '../vehicle/CarCatalog.ts';
 import type { TransmissionMode } from '../vehicle/Gearbox.ts';
 import type { TimeOfDay } from '../world/Environment.ts';
+
+/** On touch screens: steer with on-screen buttons or by tilting the phone like a wheel. */
+export type SteeringMode = 'buttons' | 'tilt';
 
 export interface Settings {
   transmission: TransmissionMode;
@@ -10,8 +14,11 @@ export interface Settings {
   timeOfDay: TimeOfDay;
   /** ABS, traction control and stability control. */
   assists: boolean;
-  /** Player car paint (hex). */
-  paint: number;
+  /** Selected car. */
+  car: CarId;
+  /** Paint chosen per car (hex); cars without an entry wear their default colour. */
+  paints: Partial<Record<CarId, number>>;
+  steering: SteeringMode;
   showFps: boolean;
 }
 
@@ -21,7 +28,9 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 0.7,
   timeOfDay: 'day',
   assists: true,
-  paint: 0xb3121b,
+  car: DEFAULT_CAR,
+  paints: {},
+  steering: 'buttons',
   showFps: false,
 };
 
@@ -31,9 +40,16 @@ export const PAINT_OPTIONS: { name: string; color: number }[] = [
   { name: 'Silver', color: 0xa9adb3 },
   { name: 'Racing Green', color: 0x14452f },
   { name: 'Sunburst', color: 0xe07a12 },
+  { name: 'Electric Blue', color: 0x2b6cc4 },
+  { name: 'Lime', color: 0x7fb800 },
   { name: 'Onyx', color: 0x111214 },
   { name: 'Pearl', color: 0xe8e8e4 },
 ];
+
+/** Paint the given car should wear. */
+export function paintFor(s: Settings, car: CarId): number {
+  return s.paints[car] ?? getCar(car).defaultPaint;
+}
 
 const SETTINGS_KEY = 'redline-highway.settings.v1';
 const BEST_KEY = 'redline-highway.best.v1';
@@ -51,7 +67,7 @@ function storage(): Storage | null {
 }
 
 export function loadSettings(): Settings {
-  const s = { ...DEFAULT_SETTINGS };
+  const s: Settings = { ...DEFAULT_SETTINGS, paints: {} };
   const raw = storage()?.getItem(SETTINGS_KEY);
   if (!raw) return s;
   try {
@@ -61,7 +77,18 @@ export function loadSettings(): Settings {
     if (typeof data.volume === 'number' && data.volume >= 0 && data.volume <= 1) s.volume = data.volume;
     if (typeof data.timeOfDay === 'string' && (TIMES as string[]).includes(data.timeOfDay)) s.timeOfDay = data.timeOfDay as TimeOfDay;
     if (typeof data.assists === 'boolean') s.assists = data.assists;
-    if (typeof data.paint === 'number') s.paint = data.paint;
+    if (isCarId(data.car)) s.car = data.car;
+    if (data.paints && typeof data.paints === 'object') {
+      const paints: Settings['paints'] = {};
+      for (const [id, color] of Object.entries(data.paints as Record<string, unknown>)) {
+        if (isCarId(id) && typeof color === 'number' && Number.isInteger(color) && color >= 0 && color <= 0xffffff) paints[id] = color;
+      }
+      s.paints = paints;
+    }
+    // v1 stored a single paint for the only car there was.
+    const legacy = (data as { paint?: unknown }).paint;
+    if (typeof legacy === 'number' && s.paints.kestrel === undefined) s.paints = { ...s.paints, kestrel: legacy };
+    if (data.steering === 'buttons' || data.steering === 'tilt') s.steering = data.steering;
     if (typeof data.showFps === 'boolean') s.showFps = data.showFps;
   } catch {
     // Corrupt settings: fall back to defaults.

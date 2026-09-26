@@ -1,7 +1,18 @@
 import { approach, clamp, clamp01, lerp } from '../core/math.ts';
 import type { DriverInput } from '../vehicle/VehiclePhysics.ts';
 
-export type InputAction = 'shiftUp' | 'shiftDown' | 'camera' | 'pause' | 'restart' | 'confirm' | 'fullscreen';
+export type InputAction = 'shiftUp' | 'shiftDown' | 'camera' | 'pause' | 'restart' | 'confirm' | 'fullscreen' | 'garage' | 'left' | 'right';
+
+/** Held on-screen controls (touch). */
+export type TouchControl = 'throttle' | 'brake' | 'handbrake' | 'left' | 'right';
+
+/** Menu navigation keys: consumed as actions, and still work as driving keys while playing. */
+const MENU_KEYS: Record<string, InputAction> = {
+  ArrowLeft: 'left',
+  KeyA: 'left',
+  ArrowRight: 'right',
+  KeyD: 'right',
+};
 
 const KEY_ACTIONS: Record<string, InputAction> = {
   ShiftLeft: 'shiftUp',
@@ -16,6 +27,7 @@ const KEY_ACTIONS: Record<string, InputAction> = {
   KeyR: 'restart',
   Enter: 'confirm',
   KeyF: 'fullscreen',
+  KeyG: 'garage',
 };
 
 /** Keys whose browser default (scrolling, focus changes) must be suppressed while playing. */
@@ -65,6 +77,10 @@ export class Input {
   usingGamepad = false;
 
   private readonly keys = new Set<string>();
+  private readonly touch = new Set<TouchControl>();
+  /** Tilt steering (-1..1, + = left) or null when not tilting. */
+  private tilt: number | null = null;
+  private tiltSteer = 0;
   private readonly pending = new Set<InputAction>();
   private readonly prevButtons = new Map<number, boolean>();
   private kbThrottle = 0;
@@ -76,7 +92,7 @@ export class Input {
     target.addEventListener('keydown', (e) => {
       if (CAPTURED.has(e.code)) e.preventDefault();
       if (!e.repeat) {
-        const action = KEY_ACTIONS[e.code];
+        const action = KEY_ACTIONS[e.code] ?? MENU_KEYS[e.code];
         if (action) this.pending.add(action);
       }
       this.keys.add(e.code);
@@ -87,7 +103,32 @@ export class Input {
       this.keys.delete(e.code);
     });
     // Releasing everything on focus loss avoids a stuck throttle after alt-tab.
-    target.addEventListener('blur', () => this.keys.clear());
+    target.addEventListener('blur', () => {
+      this.keys.clear();
+      this.touch.clear();
+    });
+  }
+
+  /** On-screen control pressed or released. */
+  setTouch(control: TouchControl, pressed: boolean): void {
+    if (pressed) this.touch.add(control);
+    else this.touch.delete(control);
+    this.usingGamepad = false;
+  }
+
+  /** Tilt steering input (-1..1, + = left), or null to stop tilt steering. */
+  setTilt(value: number | null): void {
+    this.tilt = value === null ? null : clamp(value, -1, 1);
+  }
+
+  /** Queues a one-shot action (from an on-screen button). */
+  press(action: InputAction): void {
+    this.pending.add(action);
+  }
+
+  /** Releases all held touch controls (e.g. when the controls are hidden). */
+  releaseTouch(): void {
+    this.touch.clear();
   }
 
   /** Returns true once per press of the action (edge-triggered). */
@@ -106,11 +147,12 @@ export class Input {
    */
   update(dt: number, speed: number): void {
     const k = this.keys;
-    const up = k.has('KeyW') || k.has('ArrowUp');
-    const down = k.has('KeyS') || k.has('ArrowDown');
-    const left = k.has('KeyA') || k.has('ArrowLeft');
-    const right = k.has('KeyD') || k.has('ArrowRight');
-    const kbHandbrake = k.has('Space');
+    const t = this.touch;
+    const up = k.has('KeyW') || k.has('ArrowUp') || t.has('throttle');
+    const down = k.has('KeyS') || k.has('ArrowDown') || t.has('brake');
+    const left = k.has('KeyA') || k.has('ArrowLeft') || t.has('left');
+    const right = k.has('KeyD') || k.has('ArrowRight') || t.has('right');
+    const kbHandbrake = k.has('Space') || t.has('handbrake');
 
     this.kbThrottle = approach(this.kbThrottle, up ? 1 : 0, (up ? 6 : 10) * dt);
     this.kbBrake = approach(this.kbBrake, down ? 1 : 0, (down ? 5 : 10) * dt);
@@ -133,6 +175,14 @@ export class Input {
     let brake = this.kbBrake;
     let steer = this.kbSteer;
     let handbrake = kbHandbrake ? 1 : 0;
+
+    if (this.tilt !== null) {
+      // Light smoothing takes the jitter out of the accelerometer without adding lag.
+      this.tiltSteer = approach(this.tiltSteer, this.tilt, 6 * dt);
+      if (Math.abs(this.tiltSteer) > Math.abs(steer)) steer = this.tiltSteer;
+    } else {
+      this.tiltSteer = 0;
+    }
 
     const pad = this.findGamepad();
     if (pad) {

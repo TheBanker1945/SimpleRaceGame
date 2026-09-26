@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { clamp, clamp01 } from '../core/math.ts';
+import type { EngineSound } from '../vehicle/CarCatalog.ts';
 
 /** Per-frame state of the player car relevant to sound. */
 export interface CarSoundState {
@@ -46,7 +47,7 @@ const tmpVec = new THREE.Vector3();
 
 /**
  * Fully synthesized sound: no audio files. Engine = harmonic oscillator stack that
- * follows the firing frequency of a six-cylinder (rpm/20 Hz) with load-dependent
+ * follows the firing frequency of the car's engine (rpm/60 × cylinders/2 Hz) with load-dependent
  * distortion and filtering, plus intake noise; tires, wind and road from filtered noise;
  * traffic from four doppler-shifted, panned voices; one-shots for shifts, crashes,
  * horns and near-miss whooshes.
@@ -81,6 +82,7 @@ export class AudioEngine {
 
   private readonly voices: Voice[] = [];
   private volume = 0.7;
+  private engine: EngineSound = { cylinders: 6, subHarmonic: 1 / 3, rasp: 0.3 };
   private lastThrottle = 0;
   private lastRpm = 0;
   private popsUntil = 0;
@@ -119,6 +121,11 @@ export class AudioEngine {
     this.buildEngine(ctx);
     this.buildNoiseLayers(ctx);
     for (let i = 0; i < 4; i++) this.voices.push(this.buildVoice(ctx));
+  }
+
+  /** Engine character of the selected car (cylinder count sets the firing pitch). */
+  setEngineSound(sound: EngineSound): void {
+    this.engine = sound;
   }
 
   setVolume(v: number): void {
@@ -304,14 +311,16 @@ export class AudioEngine {
 
     // --- engine
     const rpm = Math.max(car.rpm, car.idleRPM * 0.9);
-    const fire = rpm / 20;
+    const eng = this.engine;
+    // Firing frequency: cylinders/2 combustions per crank revolution.
+    const fire = (rpm / 60) * (eng.cylinders / 2);
     const rpmNorm = clamp01((rpm - car.idleRPM) / (car.limiterRPM - car.idleRPM));
     const load = car.limiterCutting ? 0 : clamp01(car.load);
     this.engineOsc1.frequency.setTargetAtTime(fire, t, 0.012);
-    this.engineOsc2.frequency.setTargetAtTime(fire / 3, t, 0.012);
+    this.engineOsc2.frequency.setTargetAtTime(fire * eng.subHarmonic, t, 0.012);
     this.engineOsc3.frequency.setTargetAtTime(fire * 2.005, t, 0.012);
-    this.enginePre.gain.setTargetAtTime(0.6 + load * 1.4, t, k);
-    this.engineFilter.frequency.setTargetAtTime(260 + rpm * 0.32 + load * 2200, t, k);
+    this.enginePre.gain.setTargetAtTime(0.6 + load * (1.2 + eng.rasp * 0.6), t, k);
+    this.engineFilter.frequency.setTargetAtTime(260 + rpm * (0.26 + eng.rasp * 0.12) + load * 2200, t, k);
     const engineLevel = 0.1 + load * 0.2 + rpmNorm * 0.12;
     this.engineGain.gain.setTargetAtTime(car.limiterCutting ? engineLevel * 0.5 : engineLevel, t, car.limiterCutting ? 0.005 : k);
     this.intakeFilter.frequency.setTargetAtTime(500 + rpm * 0.45, t, k);
