@@ -42,10 +42,10 @@ export function createRoadTexture(maxAnisotropy: number): THREE.CanvasTexture {
   const pxPerM = W / width;
   const pyPerM = H / MARKING_PERIOD;
 
-  ctx.fillStyle = '#3a3c3f';
+  ctx.fillStyle = '#343538';
   ctx.fillRect(0, 0, W, H);
   // Shoulders are a slightly different, lighter mix.
-  ctx.fillStyle = '#44464a';
+  ctx.fillStyle = '#3d3e41';
   ctx.fillRect(0, 0, px(LANES_HALF_WIDTH), H);
   ctx.fillRect(px(-LANES_HALF_WIDTH), 0, W - px(-LANES_HALF_WIDTH), H);
   speckle(ctx, W, H, 26000, rng, ['#2e3033', '#46494c', '#35373a', '#505356', '#292b2e'], 2);
