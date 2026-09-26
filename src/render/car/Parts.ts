@@ -198,7 +198,8 @@ export function diffuser(ctx: DetailContext, width: number, fins: number, length
       const z = zFront - (zFront - zEnd) * (k / steps);
       pts.push(new THREE.Vector2(z, body.bottomAt(z) + 0.012));
     }
-    pts.push(new THREE.Vector2(zEnd, flat + (top - flat) * 0.3), new THREE.Vector2(zFront, flat));
+    // Lower edge rises toward the back so the strakes don't hang below the bumper like teeth.
+    pts.push(new THREE.Vector2(zEnd, flat + (top - flat) * 0.55), new THREE.Vector2(zFront, flat + 0.01));
     const fin = new THREE.ExtrudeGeometry(new THREE.Shape(pts), { depth: 0.012, bevelEnabled: false });
     // rotateY(-90°): shape x → car z, extrusion (0..0.012) → car -x.
     fin.rotateY(-Math.PI / 2);

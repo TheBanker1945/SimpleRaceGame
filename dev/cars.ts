@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CarModel } from '../src/render/CarModel.ts';
+import { buildTrafficGeometry, TRAFFIC_TYPES } from '../src/traffic/TrafficTypes.ts';
 import { getCar, isCarId } from '../src/vehicle/CarCatalog.ts';
 
 const params = new URLSearchParams(location.search);
@@ -37,8 +38,24 @@ ground.receiveShadow = true;
 scene.add(ground);
 
 const t0 = performance.now();
-const car = new CarModel(def, { paint, withHeadlightLights: false });
+const trafficKind = params.get('traffic');
+const car = trafficKind ? trafficModel(trafficKind) : new CarModel(def, { paint, withHeadlightLights: false });
 const buildMs = performance.now() - t0;
+
+/** Traffic vehicle with the same materials the instanced renderer uses. */
+function trafficModel(kind: string): CarModel {
+  const type = TRAFFIC_TYPES.find((t) => t.kind === kind) ?? TRAFFIC_TYPES[1];
+  const g = buildTrafficGeometry(type);
+  const root = new THREE.Group();
+  root.add(new THREE.Mesh(g.body, new THREE.MeshStandardMaterial({ color: 0x2b4d8c, metalness: 0.35, roughness: 0.42 })));
+  root.add(new THREE.Mesh(g.detail, new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.2, roughness: 0.55 })));
+  root.add(new THREE.Mesh(g.head, new THREE.MeshBasicMaterial({ color: 0x9ea3a8 })));
+  root.add(new THREE.Mesh(g.tail, new THREE.MeshBasicMaterial({ color: 0x470404 })));
+  root.add(new THREE.Mesh(g.signalLeft, new THREE.MeshBasicMaterial({ color: 0xff9e0c })));
+  root.add(new THREE.Mesh(g.signalRight, new THREE.MeshBasicMaterial({ color: 0x472805 })));
+  const stub = { root, paintMaterial: new THREE.MeshPhysicalMaterial(), setHeadlights: () => undefined };
+  return stub as unknown as CarModel;
+}
 car.root.traverse((o) => {
   if (o instanceof THREE.Mesh) o.castShadow = true;
 });

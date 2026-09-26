@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CABIN_S_MAX, type Cabin } from './Body.ts';
+import { CABIN_S_MAX, type Cabin, type CabinMaterial } from './Body.ts';
 import type { WindowSpec } from './Design.ts';
 
 /*
@@ -180,4 +180,26 @@ export function drawCabinMask(cabin: Cabin, spec: WindowSpec): CabinTextures {
     return t;
   };
   return { map: tex(colorCanvas, true), orm: tex(ormCanvas, false) };
+}
+
+/**
+ * Geometric version of the window layout for cars without a mask texture (traffic):
+ * returns 1 for quads inside a window, 0 for painted ones.
+ */
+export function windowClassifier(spec: WindowSpec, zFront: number): CabinMaterial {
+  return (z, s, st) => {
+    // Quad centres are compared with a small margin so rows placed exactly on an edge
+    // (see CabinResolution.align) fall cleanly on one side.
+    const e = 0.004;
+    if (z > spec.windshieldTop && s < st.sRail - spec.aPillar - e) return 1;
+    if (z >= spec.rearBottom && z <= spec.rearTop && s < st.sRail - spec.rearInset - e) return 1;
+    const top = st.sRail + spec.aPillar * 0.35 + spec.sideTopInset + e;
+    const bottom = st.sBase - spec.belt - e;
+    if (s > top && s < bottom && z < (spec.sideFront ?? zFront)) {
+      const t = (s - top) / Math.max(1e-6, bottom - top);
+      const rear = spec.sideRearTop + (spec.sideRearBottom - spec.sideRearTop) * t;
+      if (z > rear && !(spec.bPillar && Math.abs(z - spec.bPillar.z) < spec.bPillar.width / 2)) return 1;
+    }
+    return 0;
+  };
 }

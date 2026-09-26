@@ -83,7 +83,20 @@ interface Pt {
 }
 
 const FLOOR_ROWS = 5; // F0..F4 before the outer curve
-const OUTER_SAMPLES = 27;
+
+/** Mesh density. The player's car uses the defaults; traffic uses a coarser one. */
+export interface BodyResolution {
+  /** Points along the outer half-section. */
+  outer: number;
+  /** Station spacing along the car, and in the last 0.3 m at each end. */
+  step: number;
+  endStep: number;
+  /** Stations across each wheel arch. */
+  archSteps: number;
+}
+
+export const FINE_BODY: BodyResolution = { outer: 27, step: 0.045, endStep: 0.014, archSteps: 22 };
+export const COARSE_BODY: BodyResolution = { outer: 13, step: 0.13, endStep: 0.045, archSteps: 10 };
 
 /** Resamples a polyline to `count` points, spending more points where it bends. */
 function resample(points: Pt[], count: number, bendWeight: number): Pt[] {
@@ -117,6 +130,23 @@ function resample(points: Pt[], count: number, bendWeight: number): Pt[] {
   return out;
 }
 
+/**
+ * Keeps the plan-view corner rounding out of the wheel arches (it pulls the body back and
+ * would push the arch lip into the tire on short overhangs), and shallow enough that the
+ * surface never folds over itself.
+ */
+function clearOfArches(spec: LowerBodySpec, end: 'nose' | 'tail'): CornerSpec {
+  const c = spec[end];
+  let room = Infinity;
+  for (const a of spec.arches) {
+    room = Math.min(room, end === 'nose' ? spec.zFront - (a.z + a.radius) : a.z - a.radius - spec.zRear);
+  }
+  const length = Math.max(0.12, Math.min(c.length, room - 0.03));
+  // smoothstep's steepest slope is 1.5 / length; keep dz'/dz ≥ 0.2 so the panels never fold.
+  const depth = Math.min(c.depth, (0.8 * length) / 1.5);
+  return { ...c, length, depth };
+}
+
 export class LowerBody {
   readonly spec: LowerBodySpec;
   private readonly halfWidth: Profile;
@@ -126,9 +156,11 @@ export class LowerBody {
   private readonly shoulder: Profile;
   private readonly fender: Profile;
   private readonly valley: Profile;
+  private readonly res: BodyResolution;
 
-  constructor(spec: LowerBodySpec) {
-    this.spec = spec;
+  constructor(spec: LowerBodySpec, res: BodyResolution = FINE_BODY) {
+    this.spec = { ...spec, nose: clearOfArches(spec, 'nose'), tail: clearOfArches(spec, 'tail') };
+    this.res = res;
     this.halfWidth = toProfile(spec.halfWidth);
     this.top = toProfile(spec.top);
     this.bottom = toProfile(spec.bottom);
@@ -228,16 +260,22 @@ export class LowerBody {
   private stations(): number[] {
     const { zFront, zRear } = this.spec;
     const zs: number[] = [];
-    for (let z = zRear; z <= zFront; z += 0.045) zs.push(z);
+    const { step: base, endStep, archSteps } = this.res;
+    for (let z = zRear; z <= zFront; z += base) zs.push(z);
+    // Dense stations wherever the ends curve: the last 0.3 m and the plan-view corner zones.
+    const noseZone = Math.max(0.3, this.spec.nose.length);
+    const tailZone = Math.max(0.3, this.spec.tail.length);
     for (const [from, to, step] of [
-      [zFront - 0.3, zFront, 0.014],
-      [zRear, zRear + 0.3, 0.014],
+      [zFront - noseZone, zFront - 0.3, endStep * 2],
+      [zFront - 0.3, zFront, endStep],
+      [zRear, zRear + 0.3, endStep],
+      [zRear + 0.3, zRear + tailZone, endStep * 2],
     ] as const) {
       for (let z = from; z <= to; z += step) zs.push(z);
     }
     zs.push(zFront, zRear);
     for (const a of this.spec.arches) {
-      const steps = 22;
+      const steps = archSteps;
       for (let k = 1; k < steps; k++) zs.push(a.z + a.radius * Math.cos((k / steps) * Math.PI));
       for (const edge of [a.z - a.radius, a.z + a.radius]) zs.push(edge - 2e-4, edge + 2e-4);
     }
@@ -251,25 +289,25 @@ export class LowerBody {
   halfSection(z: number): Pt[] {
     const yb = this.bottom.at(z);
     const arch = this.archAt(z);
-    let outer = this.outerCurve(z);
+    const outer = this.outerCurve(z);
+    // Samples sit at fixed places along the whole outer curve, so rows run cleanly along the
+    // car; where an arch cuts the side, the samples below the cut collapse onto the arch lip.
+    const res = resample(outer, this.res.outer, 0.12);
     let wellTop = yb;
     if (arch.top > yb) {
-      // Clip the outer surface where the arch opening cuts it.
-      const maxY = Math.max(...outer.map((p) => p.y));
+      const maxY = Math.max(...res.map((p) => p.y));
       const cut = Math.min(arch.top, maxY - 0.04);
-      if (cut > yb) {
+      let k = 1;
+      while (k < res.length && res[k].y < cut) k++;
+      if (cut > yb && k < res.length) {
         wellTop = cut;
-        let k = 1;
-        while (k < outer.length && outer[k].y < cut) k++;
-        if (k < outer.length) {
-          const a = outer[k - 1];
-          const b = outer[k];
-          const t = b.y - a.y > 1e-9 ? (cut - a.y) / (b.y - a.y) : 0;
-          outer = [{ x: a.x + (b.x - a.x) * t, y: cut }, ...outer.slice(k)];
-        }
+        const a = res[k - 1];
+        const b = res[k];
+        const t = b.y - a.y > 1e-9 ? (cut - a.y) / (b.y - a.y) : 0;
+        const lip = { x: a.x + (b.x - a.x) * t, y: cut };
+        for (let q = 0; q < k; q++) res[q] = { ...lip };
       }
     }
-    const res = resample(outer, OUTER_SAMPLES, 0.12);
     const xo = res[0].x;
     const innerX = Math.min(arch.innerX, xo - 0.02);
     return [
@@ -296,7 +334,7 @@ export class LowerBody {
 
   buildGeometry(): THREE.BufferGeometry {
     const zs = this.stations();
-    const half = OUTER_SAMPLES + FLOOR_ROWS;
+    const half = this.res.outer + FLOOR_ROWS;
     const rows = half * 2 - 1;
     const grid = new GridSurface(zs.length, rows);
     const kind = (j: number): 'floor' | 'well' | 'outer' => {
@@ -377,8 +415,22 @@ export interface CabinStation {
 
 export const CABIN_S_MAX = 1.6;
 
-const CABIN_TOP = 17;
-const CABIN_SIDE = 7;
+export interface CabinResolution {
+  top: number;
+  side: number;
+  step: number;
+  /**
+   * Put rows exactly on window edges (belt line, top of the side glass, A-pillar), so glass
+   * classified per quad (traffic) gets straight edges. Distances in metres of arc length.
+   */
+  align?: { belt: number; sideTop: number; aPillar: number };
+}
+
+export const FINE_CABIN: CabinResolution = { top: 17, side: 7, step: 0.038 };
+export const COARSE_CABIN: CabinResolution = { top: 10, side: 6, step: 0.06 };
+
+/** Cabin quad → material slot, from its position in (z, s) window-layout space. */
+export type CabinMaterial = (z: number, s: number, st: CabinStation) => number;
 
 export class Cabin {
   readonly spec: CabinSpec;
@@ -388,10 +440,12 @@ export class Cabin {
   private readonly baseW: Profile;
   private readonly railW: Profile;
   private readonly body: LowerBody;
+  private readonly res: CabinResolution;
 
-  constructor(spec: CabinSpec, body: LowerBody) {
+  constructor(spec: CabinSpec, body: LowerBody, res: CabinResolution = FINE_CABIN) {
     this.spec = spec;
     this.body = body;
+    this.res = res;
     this.roof = toProfile(spec.roof);
     this.rail = toProfile(spec.rail);
     this.baseW = toProfile(spec.baseHalfWidth);
@@ -401,7 +455,7 @@ export class Cabin {
   /** Station positions along the cabin (finer where the glass curves). */
   private zs(): number[] {
     const { zFront, zRear } = this.spec;
-    const n = Math.max(24, Math.round((zFront - zRear) / 0.038));
+    const n = Math.max(12, Math.round((zFront - zRear) / this.res.step));
     const out: number[] = [];
     for (let i = 0; i <= n; i++) out.push(zRear + ((zFront - zRear) * i) / n);
     return out;
@@ -415,8 +469,17 @@ export class Cabin {
     const roofY = Math.max(baseY, this.roof.at(z));
     const railY = Math.min(roofY, Math.max(baseY, this.rail.at(z)));
     const side: Pt[] = [];
-    for (let k = 0; k <= CABIN_SIDE; k++) {
-      const t = k / CABIN_SIDE;
+    const sideCount = this.res.side;
+    const align = this.res.align;
+    const sideLen = Math.hypot(Wr - Wb, railY - baseY);
+    const aligned = !!align && sideCount >= 3 && sideLen > align.belt + align.sideTop + 0.02;
+    for (let k = 0; k <= sideCount; k++) {
+      let t = k / sideCount;
+      if (aligned && align) {
+        const t1 = align.belt / sideLen;
+        const t2 = 1 - align.sideTop / sideLen;
+        t = k === 0 ? 0 : k === sideCount ? 1 : t1 + ((t2 - t1) * (k - 1)) / (sideCount - 2);
+      }
       // Slight outward bow of the side glass.
       const bow = Math.sin(t * Math.PI) * 0.012 * Math.min(1, (railY - baseY) / 0.25);
       side.push({ x: Wb + (Wr - Wb) * t + bow, y: baseY + (railY - baseY) * t });
@@ -429,7 +492,22 @@ export class Cabin {
       const Y = Math.pow(Math.sin(th), 2 / n);
       dense.push({ x: Wr * X, y: railY + (roofY - railY) * Y });
     }
-    const topPts = resample(dense, CABIN_TOP, 0.05);
+    let topPts = resample(dense, this.res.top, 0.05);
+    if (align) {
+      // Split the roof curve at the A-pillar distance and give that point its own row.
+      let acc = 0;
+      for (let k = 1; k < dense.length; k++) {
+        const seg = Math.hypot(dense[k].x - dense[k - 1].x, dense[k].y - dense[k - 1].y);
+        if (acc + seg >= align.aPillar) {
+          const t = seg > 1e-9 ? (align.aPillar - acc) / seg : 0;
+          const cut = { x: dense[k - 1].x + (dense[k].x - dense[k - 1].x) * t, y: dense[k - 1].y + (dense[k].y - dense[k - 1].y) * t };
+          const rest = [cut, ...dense.slice(k)];
+          if (rest.length >= 2) topPts = [dense[0], ...resample(rest, this.res.top - 1, 0.05)];
+          break;
+        }
+        acc += seg;
+      }
+    }
     const pts = [...side, ...topPts.slice(1)];
     let sRail = 0;
     for (let k = topPts.length - 1; k > 0; k--) sRail += Math.hypot(topPts[k].x - topPts[k - 1].x, topPts[k].y - topPts[k - 1].y);
@@ -438,9 +516,13 @@ export class Cabin {
     return { pts, sideCount: side.length, st: { z, sRail, sBase, railY, baseY } };
   }
 
-  buildGeometry(): THREE.BufferGeometry {
+  /**
+   * @param materialOf optional per-quad material (e.g. glass vs paint for traffic, which has
+   *   no window texture); the player's car uses one material and a painted-in window mask.
+   */
+  buildGeometry(materialOf?: CabinMaterial, materialCount = 1): THREE.BufferGeometry {
     const zs = this.zs();
-    const halfCount = CABIN_SIDE + CABIN_TOP;
+    const halfCount = this.res.side + this.res.top;
     const rows = halfCount * 2 - 1;
     const grid = new GridSurface(zs.length, rows, true);
     const { zFront, zRear } = this.spec;
@@ -458,7 +540,16 @@ export class Cabin {
         grid.setUv(i, j, (zs[i] - zRear) / (zFront - zRear), s[h] / CABIN_S_MAX);
       }
     }
-    return buildGridGeometry(grid, () => 0, { materialCount: 1, creaseAngle: (50 * Math.PI) / 180 });
+    const uv = grid.uvs as Float32Array;
+    const sAt = (i: number, j: number): number => uv[(i * rows + j) * 2 + 1] * CABIN_S_MAX;
+    const classify = materialOf
+      ? (i: number, j: number): number => {
+          const z = (zs[i] + zs[i + 1]) / 2;
+          const sc = (sAt(i, j) + sAt(i + 1, j) + sAt(i, j + 1) + sAt(i + 1, j + 1)) / 4;
+          return materialOf(z, sc, this.stationAt(z));
+        }
+      : () => 0;
+    return buildGridGeometry(grid, classify, { materialCount, creaseAngle: (50 * Math.PI) / 180 });
   }
 
   /** Station layout interpolated at z (after buildGeometry). */

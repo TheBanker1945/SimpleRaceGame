@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { buildTrafficCar } from './TrafficModels.ts';
 
 export type TrafficKind = 'hatch' | 'sedan' | 'suv' | 'van' | 'boxTruck' | 'semi';
 
@@ -245,33 +246,6 @@ function finish(body: THREE.BufferGeometry[], detail: THREE.BufferGeometry[], l:
 // ------------------------------------------------------------------ builders
 // All models face +Z with the origin on the ground at the vehicle center.
 
-function buildCar(t: TrafficType, opts: { bodyH: number; cabinH: number; cabinLen: number; cabinZ: number; wheelR: number; hatch: boolean }): TrafficGeometry {
-  const L = t.length;
-  const W = t.width;
-  const front = L / 2;
-  const rear = -L / 2;
-  const ground = 0.22;
-  const bodyTop = ground + opts.bodyH;
-  const body: THREE.BufferGeometry[] = [rounded(W, opts.bodyH, L, 0.12, 0, ground + opts.bodyH / 2, 0)];
-  // Roof slab over the glass.
-  const roofLen = opts.cabinLen * 0.72;
-  body.push(rounded(W * 0.8, 0.08, roofLen, 0.03, 0, bodyTop + opts.cabinH, opts.cabinZ - (opts.hatch ? 0.12 : 0)));
-  const detail: THREE.BufferGeometry[] = [];
-  // Glasshouse (tapered by stacking two boxes).
-  detail.push(paintVertices(rounded(W * 0.86, opts.cabinH * 0.55, opts.cabinLen, 0.1, 0, bodyTop + opts.cabinH * 0.27, opts.cabinZ), 0x1b232b));
-  detail.push(
-    paintVertices(rounded(W * 0.8, opts.cabinH * 0.5, opts.cabinLen * 0.82, 0.08, 0, bodyTop + opts.cabinH * 0.7, opts.cabinZ - 0.05), 0x1b232b),
-  );
-  // Bumpers, grille, underbody.
-  detail.push(paintVertices(box(W - 0.1, 0.18, 0.12, 0, ground + 0.12, front - 0.03), 0x222426));
-  detail.push(paintVertices(box(W - 0.1, 0.18, 0.12, 0, ground + 0.12, rear + 0.03), 0x222426));
-  detail.push(paintVertices(box(W * 0.45, 0.14, 0.04, 0, ground + opts.bodyH * 0.55, front + 0.01), 0x18191b));
-  detail.push(paintVertices(box(0.44, 0.11, 0.02, 0, ground + opts.bodyH * 0.45, rear - 0.01), 0xe6e6de));
-  const axle = L / 2 - opts.wheelR - 0.55;
-  detail.push(...wheels(opts.wheelR, 0.22, W - 0.24, [axle, -axle + 0.1]));
-  return finish(body, detail, lamps(W, front + 0.005, rear - 0.005, ground + opts.bodyH * 0.72, ground + opts.bodyH * 0.8));
-}
-
 function buildVan(t: TrafficType): TrafficGeometry {
   const L = t.length;
   const W = t.width;
@@ -341,11 +315,10 @@ function buildSemi(t: TrafficType): TrafficGeometry {
 export function buildTrafficGeometry(t: TrafficType): TrafficGeometry {
   switch (t.kind) {
     case 'hatch':
-      return buildCar(t, { bodyH: 0.66, cabinH: 0.58, cabinLen: 2.1, cabinZ: -0.35, wheelR: 0.31, hatch: true });
     case 'sedan':
-      return buildCar(t, { bodyH: 0.64, cabinH: 0.56, cabinLen: 2.3, cabinZ: -0.2, wheelR: 0.32, hatch: false });
     case 'suv':
-      return buildCar(t, { bodyH: 0.86, cabinH: 0.64, cabinLen: 2.6, cabinZ: -0.35, wheelR: 0.37, hatch: true });
+      // Cars use the same lofted bodies as the player's cars (see TrafficModels).
+      return buildTrafficCar(t);
     case 'van':
       return buildVan(t);
     case 'boxTruck':

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 /**
  * A structured quad grid (columns × rows of vertices) that becomes a triangle mesh with
  * per-quad materials. Degenerate triangles (collapsed ends, zero-height seams) are dropped,
- * and normals are area-weighted but split at a crease angle, so smooth panels shade smoothly
+ * and normals are angle-weighted but split at a crease angle, so smooth panels shade smoothly
  * while wheel-arch lips and panel edges stay crisp.
  */
 export class GridSurface {
@@ -46,8 +46,11 @@ export class GridSurface {
   }
 }
 
-/** Quad (i..i+1, j..j+1) → material slot, or -1 to leave a hole. */
-export type QuadMaterial = (i: number, j: number, nx: number, ny: number, nz: number) => number;
+/**
+ * Quad (i..i+1, j..j+1) → material slot, or -1 to leave a hole. With `perTriangle`, it is
+ * asked once per triangle: tri 0 = (i,j)(i+1,j)(i+1,j+1), tri 1 = (i,j)(i+1,j+1)(i,j+1).
+ */
+export type QuadMaterial = (i: number, j: number, nx: number, ny: number, nz: number, tri: 0 | 1) => number;
 
 export interface GridMeshOptions {
   materialCount: number;
@@ -55,6 +58,8 @@ export interface GridMeshOptions {
   creaseAngle?: number;
   /** Reverse the winding (when the grid runs the other way round). */
   flip?: boolean;
+  /** Classify each triangle separately (halves the stair-steps along diagonal material edges). */
+  perTriangle?: boolean;
 }
 
 const MIN_AREA = 1e-8;
@@ -114,14 +119,14 @@ export function buildGridGeometry(grid: GridSurface, materialOf: QuadMaterial, o
         nz = -nz;
       }
       const nl = Math.hypot(nx, ny, nz) || 1;
-      const mat = materialOf(i, j, nx / nl, ny / nl, nz / nl);
-      if (mat < 0) continue;
+      const mat0 = materialOf(i, j, nx / nl, ny / nl, nz / nl, 0);
+      const mat1 = opts.perTriangle ? materialOf(i, j, nx / nl, ny / nl, nz / nl, 1) : mat0;
       if (opts.flip) {
-        pushTri(p00, p11, p10, mat);
-        pushTri(p00, p01, p11, mat);
+        if (mat0 >= 0) pushTri(p00, p11, p10, mat0);
+        if (mat1 >= 0) pushTri(p00, p01, p11, mat1);
       } else {
-        pushTri(p00, p10, p11, mat);
-        pushTri(p00, p11, p01, mat);
+        if (mat0 >= 0) pushTri(p00, p10, p11, mat0);
+        if (mat1 >= 0) pushTri(p00, p11, p01, mat1);
       }
     }
   }
@@ -149,6 +154,25 @@ export function trianglesToGeometry(
   const fill = counts.slice(0, vertexCount);
   for (let t = 0; t < triCount; t++) {
     for (let c = 0; c < 3; c++) incident[fill[tris[t * 3 + c]]++] = t;
+  }
+
+  // Corner angles: angle-weighted normals don't depend on how quads are split or how
+  // unevenly the stations are spaced (area weighting streaks glossy panels).
+  const corner = new Float32Array(tris.length);
+  for (let t = 0; t < triCount; t++) {
+    for (let c = 0; c < 3; c++) {
+      const v = tris[t * 3 + c];
+      const a = tris[t * 3 + ((c + 1) % 3)];
+      const b = tris[t * 3 + ((c + 2) % 3)];
+      const ax = P[a * 3] - P[v * 3];
+      const ay = P[a * 3 + 1] - P[v * 3 + 1];
+      const az = P[a * 3 + 2] - P[v * 3 + 2];
+      const bx = P[b * 3] - P[v * 3];
+      const by = P[b * 3 + 1] - P[v * 3 + 1];
+      const bz = P[b * 3 + 2] - P[v * 3 + 2];
+      const d = Math.hypot(ax, ay, az) * Math.hypot(bx, by, bz);
+      corner[t * 3 + c] = d > 0 ? Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by + az * bz) / d))) : 0;
+    }
   }
 
   const order: number[] = [];
@@ -180,7 +204,8 @@ export function trianglesToGeometry(
         const gy = faceN[f * 3 + 1];
         const gz = faceN[f * 3 + 2];
         if (gx * fnx + gy * fny + gz * fnz < cosCrease) continue;
-        const a = faceA[f];
+        const c0 = tris[f * 3] === v ? 0 : tris[f * 3 + 1] === v ? 1 : 2;
+        const a = corner[f * 3 + c0] + faceA[f] * 1e-6;
         sx += gx * a;
         sy += gy * a;
         sz += gz * a;
