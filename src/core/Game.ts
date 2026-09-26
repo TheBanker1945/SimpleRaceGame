@@ -3,6 +3,8 @@ import { Input } from '../input/Input.ts';
 import { collideWithBarriers, createBody, createContact, type ImpactResult } from '../physics/Collision.ts';
 import { bodyToVehicle, vehicleToBody } from '../physics/VehicleBody.ts';
 import { CameraRig } from '../render/CameraRig.ts';
+import { TrafficManager } from '../traffic/TrafficManager.ts';
+import { TrafficRenderer } from '../traffic/TrafficRenderer.ts';
 import { CarModel } from '../render/CarModel.ts';
 import { Renderer } from '../render/Renderer.ts';
 import { DEFAULT_VEHICLE } from '../vehicle/VehicleConfig.ts';
@@ -26,6 +28,10 @@ export class Game {
   private readonly carModel: CarModel;
   private readonly cameraRig: CameraRig;
   private readonly debug: HTMLElement;
+  private readonly traffic: TrafficManager;
+  private damage = 0;
+  private crashed = false;
+  private nearMisses = 0;
   private readonly settings: Settings;
   private lastTime = 0;
   private readonly orbitView: boolean;
@@ -55,6 +61,10 @@ export class Game {
     });
     this.renderer.scene.add(this.carModel.root);
     this.cameraRig = new CameraRig(this.renderer.aspect);
+    const trafficRenderer = new TrafficRenderer(24, 260);
+    this.renderer.scene.add(trafficRenderer.group);
+    this.traffic = new TrafficManager(trafficRenderer);
+    this.traffic.setDrawDistance(this.renderer.profile.drawDistance);
     this.world.applySettings(this.renderer.profile, this.settings.timeOfDay);
     this.carModel.setHeadlights(this.world.isNight);
 
@@ -79,6 +89,11 @@ export class Game {
     const startS = roadStart + START_S;
     this.world.reset(seed, startS, roadStart, far * 0.7, far * 0.7);
     this.car.reset(startS, laneCenter(2), 70 / MS_TO_KMH);
+    this.traffic.seed(seed);
+    this.traffic.reset(startS);
+    this.damage = 0;
+    this.crashed = false;
+    this.nearMisses = 0;
     this.prevS = this.car.s;
     this.prevD = this.car.d;
     this.prevPsi = this.car.psi;
@@ -105,8 +120,22 @@ export class Game {
     vehicleToBody(car, this.body);
     if (collideWithBarriers(this.body, BARRIER_LEFT, BARRIER_RIGHT, 0.25, 0.35, this.impact, this.contact)) {
       bodyToVehicle(this.body, car);
-      if (this.impact.closingSpeed > 2) this.cameraRig.addTrauma(Math.min(0.6, this.impact.closingSpeed * 0.04));
+      this.registerImpact(this.impact.closingSpeed, 13);
     }
+    this.traffic.fixedUpdate(dt, car);
+    for (const e of this.traffic.events) {
+      if (e.kind === 'collision') this.registerImpact(e.closingSpeed, 11);
+      else if (e.kind === 'nearMiss') this.nearMisses++;
+    }
+    this.traffic.events.length = 0;
+  }
+
+  /** Light hits add damage; a hard hit (or too much damage) ends the run. */
+  private registerImpact(closingSpeed: number, hardThreshold: number): void {
+    if (closingSpeed < 1) return;
+    this.cameraRig.addTrauma(Math.min(0.9, closingSpeed * 0.05));
+    this.damage = Math.min(100, this.damage + closingSpeed * closingSpeed * 0.35);
+    if (closingSpeed > hardThreshold || this.damage >= 100) this.crashed = true;
   }
 
   private frame(dt: number): void {
@@ -148,12 +177,14 @@ export class Game {
       accel: car.ax,
       lateralAccel: car.ay,
     });
+    this.traffic.render(this.loop.alpha, this.world, this.cameraRig.camera, this.world.isNight);
     this.world.environment.update(dt, this.cameraRig.camera, this.pose.position, this.pose.position.y);
     this.renderer.render(this.cameraRig.camera);
 
     this.debug.textContent =
       `${(car.speed * MS_TO_KMH).toFixed(0)} km/h  gear ${car.gearbox.gearLabel()}  ${car.rpm.toFixed(0)} rpm\n` +
       `ABS ${car.absActive ? 'ON' : '--'}  TCS ${car.tcsActive ? 'ON' : '--'}  ESC ${car.escActive ? 'ON' : '--'}  slip ${car.maxSlip.toFixed(2)}\n` +
-      `s ${car.s.toFixed(0)} m  d ${car.d.toFixed(2)}  calls ${this.renderer.renderer.info.render.calls}`;
+      `s ${car.s.toFixed(0)} m  d ${car.d.toFixed(2)}  calls ${this.renderer.renderer.info.render.calls}\n` +
+      `traffic ${this.traffic.active.length}  damage ${this.damage.toFixed(0)}%  near misses ${this.nearMisses}${this.crashed ? '  CRASHED (R)' : ''}`;
   }
 }
