@@ -105,6 +105,10 @@ export class TouchControls {
     const listen = (): void => {
       this.tiltListener = (e) => this.onOrientation(e);
       window.addEventListener('deviceorientation', this.tiltListener);
+      // Some browsers and embedded views never deliver motion data: keep the buttons then.
+      setTimeout(() => {
+        if (this.tiltEnabled && !this.tiltSeen) this.fallBackToButtons();
+      }, 1500);
     };
     if (Ctor?.requestPermission) {
       Ctor.requestPermission()
@@ -120,6 +124,9 @@ export class TouchControls {
 
   private fallBackToButtons(): void {
     this.tiltEnabled = false;
+    if (this.tiltListener) window.removeEventListener('deviceorientation', this.tiltListener);
+    this.tiltListener = null;
+    this.input.setTilt(null);
     this.steerPad.classList.remove('hidden');
     this.tiltHint.classList.add('hidden');
   }

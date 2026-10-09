@@ -57,6 +57,15 @@ const BEST_KEY = 'redline-highway.best.v1';
 const QUALITIES: Quality[] = ['low', 'medium', 'high'];
 const TIMES: TimeOfDay[] = ['day', 'sunset', 'night'];
 
+/** Reads a key; blocked or unavailable storage reads as empty. */
+function read(key: string): string | null {
+  try {
+    return storage()?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Safe localStorage access (private mode or disabled storage must not break the game). */
 function storage(): Storage | null {
   try {
@@ -68,7 +77,7 @@ function storage(): Storage | null {
 
 export function loadSettings(): Settings {
   const s: Settings = { ...DEFAULT_SETTINGS, paints: {} };
-  const raw = storage()?.getItem(SETTINGS_KEY);
+  const raw = read(SETTINGS_KEY);
   if (!raw) return s;
   try {
     const data = JSON.parse(raw) as Partial<Record<keyof Settings, unknown>>;
@@ -105,7 +114,7 @@ export function saveSettings(s: Settings): void {
 }
 
 export function loadBestScore(): number {
-  const raw = storage()?.getItem(BEST_KEY);
+  const raw = read(BEST_KEY);
   const n = raw ? Number(raw) : 0;
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
 }
